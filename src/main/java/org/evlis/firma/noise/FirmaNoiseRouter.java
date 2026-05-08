@@ -89,7 +89,7 @@ public class FirmaNoiseRouter {
             return new FirmaClimateFunction.Constant(1.0); // Always hot
         }
         // TODO: Implement actual temperature noise
-        return new FirmaClimateFunction.Constant(0.0);
+        return new FirmaClimateFunction.Constant(-1.0);
     }
     
     /**

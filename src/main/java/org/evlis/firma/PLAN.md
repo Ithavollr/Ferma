@@ -1,6 +1,11 @@
 # Firma Roadmap
 
-Three-stage roadmap for the Firma plugin. Each stage builds on the last.
+Four-stage roadmap for the Firma plugin. Each stage builds on the last.
+
+- **Stage 1:** Faithful vanilla pass-through (✅ done)
+- **Stage 2:** Noise parameter override — hardcoded noise primitive library + climate function plumbing (🟡 plumbing done; primitives stubbed as constants)
+- **Stage 3:** Void / static mode for empty worlds
+- **Stage 4:** Pack-based configuration — load `pack.yml` files (Terra-style) that wire climate parameters to any of the hardcoded primitives or constants. **Stage 4 supersedes Stage 2's `Firma:noise` selector entirely**: once packs ship, the only way to engage custom climate noise is via a pack, and the simplest possible pack (just an `id`, no `climate` section) reproduces the current Stage 2 identity behavior.
 
 ## Architectural Overview
 
@@ -39,9 +44,23 @@ Both layers are kept because each stage uses them differently.
 
 ---
 
-## Stage 2 — Noise Parameter Override
+## Stage 2 — Noise Parameter Override (hardcoded primitive library)
 
-**Goal:** Vanilla does everything (terrain shape, carving, surface, decoration, mobs, structures) except the **6 climate noise functions** (temperature, humidity, continentalness, erosion, weirdness, depth), which are supplied by Firma.
+**Goal:** Build the **fixed library of noise primitives and helpers** that future packs (Stage 4) will compose, plus the NMS plumbing to swap them into the vanilla `NoiseRouter`. In Stage 2, the wiring of climate parameters → primitives is **hardcoded in `FirmaNoiseRouter`** for now (e.g. constants for testing, identity passthrough for vanilla parity). Stage 4 will replace those hardcoded selections with YAML-driven configuration.
+
+**What lives here forever (the "primitive library" — never user-editable):**
+- `PerlinNoiseSampler`, `OctavePerlinNoiseSampler`, `DoublePerlinNoiseSampler`
+- `XoroshiroRandomSource`, `PositionalRandomFactory`
+- `ShiftedNoise`, `ClimateFunctions` (weirdness→ridges, y-clamped gradient)
+- `FirmaClimateFunction.Constant`, `FirmaClimateFunction.Identity`
+- The `NoiseRouter`-patching plumbing in `FirmaNoiseRouter` and `NMSInjectListener`
+
+**What is temporary in Stage 2 (will be removed by Stage 4):**
+- The hardcoded selection inside `FirmaNoiseRouter.create*Function()` methods
+- The `PatchMode` enum with fixed presets like `IDENTITY` / `CONSTANT_HOT`
+- The `Firma:noise` generator ID — Stage 4 removes this entirely. Packs become the *only* user-facing way to enable custom climate noise. (`PatchMode` itself may survive as an internal test fixture, but it will no longer be reachable from `bukkit.yml`.)
+
+Vanilla still does everything else (terrain shape, carving, surface, decoration, mobs, structures) — only the **6 climate noise functions** (temperature, humidity, continentalness, erosion, weirdness, depth) are supplied by Firma.
 
 **Concept:** Minecraft's `NoiseRouter` contains `DensityFunction` fields for each of these parameters:
 - `continents` → `minecraft:overworld/continents`
@@ -215,20 +234,144 @@ For each noise function:
 
 ---
 
+## Stage 4 — Pack-Based Configuration (YAML, Terra-style)
+
+**Goal:** Replace the hardcoded climate-function selection in `FirmaNoiseRouter` with **user-authored packs**. A pack is a single `pack.yml` file in `plugins/Firma/packs/<pack_id>/pack.yml` that declares which Stage 2 primitive (or constant) feeds each of the 6 climate parameters. The Stage 2 primitive library (Perlin/octave/double-Perlin/shifts/etc.) is fixed and not user-editable; packs only **wire** primitives together with parameters.
+
+**Inspiration:** Terra's pack model — but radically simpler. A Firma pack is a single YAML file, not a directory tree. No scripting, no expression language, no biome configuration (vanilla biomes still apply). Just: "for parameter X, use this primitive with these parameters."
+
+**Pack Lifecycle:**
+1. On plugin enable, scan `plugins/Firma/packs/*/pack.yml`
+2. Parse each pack into a `FirmaPack` object (pack id, display name, climate-function definitions)
+3. Register each pack as a selectable mode: `generator: Firma:<pack_id>` (e.g., `Firma:frozen_world`)
+4. When a world with that generator ID initializes, `NMSInjectListener` builds the `NoiseRouter` from the pack's definitions
+
+**Removal of `Firma:noise`:** When Stage 4 lands, the `Firma:noise` generator ID is **removed**. There is no longer a hardcoded path from `bukkit.yml` to custom climate noise — every custom-noise world routes through a pack. The minimal pack below replaces the old `Firma:noise` use case 1-for-1:
+
+```yaml
+# plugins/Firma/packs/passthrough/pack.yml
+id: passthrough
+name: "Passthrough"
+# no climate section → all 6 parameters default to identity → bit-identical vanilla
+```
+
+Used as `generator: Firma:passthrough`, this is the Stage 4 equivalent of the Stage 2 identity test and serves as the canonical regression check that the pack pipeline doesn't perturb vanilla output.
+
+**Pack YAML Schema (draft):**
+
+```yaml
+# plugins/Firma/packs/frozen_world/pack.yml
+id: frozen_world
+name: "Frozen World"
+description: "Always-cold temperature, vanilla everything else"
+
+climate:
+  temperature:
+    type: constant
+    value: -1.0
+
+  humidity:
+    type: identity      # delegate to vanilla
+
+  continentalness:
+    type: double_perlin
+    first_octave: -9
+    amplitudes: [1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+
+  erosion:
+    type: identity
+
+  weirdness:
+    type: identity
+
+  depth:
+    type: y_clamped_gradient
+    min_y: -64
+    max_y: 320
+```
+
+**Supported `type` values (each maps to a Stage 2 primitive):**
+
+| `type` | Backed by | Required fields |
+| --- | --- | --- |
+| `constant` | `FirmaClimateFunction.Constant` | `value` (double, clamped to `[-1, 1]`) |
+| `identity` | `FirmaClimateFunction.Identity` | *(none — passes through vanilla)* |
+| `perlin` | `PerlinNoiseSampler` (single octave) | `xz_scale`, `y_scale` |
+| `octave_perlin` | `OctavePerlinNoiseSampler` | `first_octave`, `amplitudes` (list), `xz_scale`, `y_scale` |
+| `double_perlin` | `DoublePerlinNoiseSampler` | `first_octave`, `amplitudes`, `xz_scale`, `y_scale` |
+| `shifted_noise` | `ShiftedNoise` wrapping a `double_perlin` | inner config + `shift_x` / `shift_z` configs |
+| `weirdness_to_ridges` | `ClimateFunctions.weirdnessToRidges` over a child noise | `source` (nested config) |
+| `y_clamped_gradient` | `ClimateFunctions.yClampedGradient` | `min_y`, `max_y` |
+
+Adding a new `type` requires writing a Java implementation in the primitive library — this is intentional. Packs *configure*, not *script*.
+
+**Tasks:**
+- New `org.evlis.firma.pack` package:
+  - `FirmaPack` — parsed pack record (id, name, map of parameter → `ClimateFunctionConfig`).
+  - `ClimateFunctionConfig` — sealed/tagged record per `type`, holding parsed parameters.
+  - `PackLoader` — scans `plugins/Firma/packs/`, parses YAML via SnakeYAML (already pulled in by Bukkit/Paper), validates schema, returns `Map<String, FirmaPack>`.
+  - `ClimateFunctionFactory` — given a `ClimateFunctionConfig` + world seed + parameter name, instantiates a `FirmaClimateFunction` using the Stage 2 primitives. Each parameter gets its own `PositionalRandomFactory` slot (seeded by `worldSeed ^ hash("<pack_id>:<parameter>")`) so configs are deterministic and independent.
+- `Firma.java` startup:
+  - Call `PackLoader.loadAll()` and store the result.
+  - In `getDefaultWorldGenerator(worldName, id)`, if `id` is not a reserved word (`vanilla`, `void`), treat it as a pack ID and look up the pack. Reject unknown pack IDs with a clear error message.
+- `FirmaChunkGenerator`:
+  - Replace `GenerationMode.NOISE_OVERRIDE` with `GenerationMode.PACK` carrying a resolved `FirmaPack`. (`VANILLA` and `VOID` remain unchanged.)
+  - Reject the legacy `Firma:noise` ID at startup with a clear migration message pointing to the `passthrough` pack example.
+- `FirmaNoiseRouter`:
+  - Replace the `PatchMode`-based public entry point with `patchClimateFunctions(NoiseRouter, RandomState, long seed, FirmaPack pack)`.
+  - For each of the 6 climate parameters, call `ClimateFunctionFactory.build(pack.climate().get("temperature"), ...)` (or default to identity if the parameter is absent from the pack) to produce the `FirmaClimateFunction`.
+  - The internal `PatchMode` enum may be retained as a unit-test-only fixture, but is no longer reachable from production code paths.
+- `NMSInjectListener`:
+  - Only `PACK` mode triggers `NoiseRouter` patching. The mode-dispatch branch for `NOISE_OVERRIDE` is removed.
+
+**Validation Rules:**
+- Pack id must match folder name and be `[a-z0-9_]+`.
+- Pack id must not be a reserved word: `vanilla`, `void`, `noise`.
+- All unspecified parameters default to identity (vanilla).
+- Unknown `type` → log error + skip pack registration (do not crash startup).
+- Numeric ranges checked at parse time (e.g. `value` for `constant` must be in `[-1, 1]`).
+
+**Verification:**
+- The minimal `passthrough` pack (id only, no `climate` section) must produce bit-identical vanilla terrain — this is the Stage 4 replacement for the Stage 2 identity test.
+- The `frozen_world` pack from the schema example above must produce the same effect as the current hardcoded `CONSTANT_HOT` test, but with `temperature: -1.0`.
+- Two packs with different ids running in two worlds simultaneously must not interfere (per-world `NoiseRouter` isolation).
+- Loading a world with the legacy `generator: Firma:noise` must fail fast with a clear migration error pointing to the pack system.
+
+---
+
 ## Mode Selection Syntax
 
 ```yaml
-# bukkit.yml
+# bukkit.yml — pre-Stage-4
 worlds:
   overworld_vanilla:
-    generator: Firma            # defaults to VANILLA
+    generator: Firma                          # defaults to VANILLA
   overworld_tweaked:
-    generator: Firma:noise      # Stage 2: climate overrides active
+    generator: Firma:noise                    # Stage 2 only: hardcoded climate overrides (REMOVED in Stage 4)
   static_world:
-    generator: Firma:void       # Stage 3: empty chunks
+    generator: Firma:void                     # Stage 3: empty chunks
 ```
 
-`FirmaChunkGenerator` parses the `id` argument of `getDefaultWorldGenerator(worldName, id)` to pick its mode.
+```yaml
+# bukkit.yml — Stage 4 and beyond
+worlds:
+  overworld_vanilla:
+    generator: Firma                          # defaults to VANILLA
+  overworld_passthrough:
+    generator: Firma:passthrough              # replaces Firma:noise — id-only pack, all parameters default to identity
+  static_world:
+    generator: Firma:void                     # Stage 3: empty chunks
+  frozen_world:
+    generator: Firma:frozen_world             # Stage 4: pack-driven configuration
+```
+
+`FirmaChunkGenerator` parses the `id` argument of `getDefaultWorldGenerator(worldName, id)`:
+- Empty or missing → `VANILLA`
+- `vanilla` → `VANILLA`
+- `void` → `VOID`
+- Any other value → treated as a pack ID (must exist in loaded packs)
 
 ---
 
@@ -238,3 +381,6 @@ worlds:
 - **Biome source coupling:** `MultiNoiseBiomeSource` holds its own reference to climate functions in some versions. Verify whether patching the `NoiseRouter` alone is sufficient, or whether we must also patch the biome source's sampler.
 - **Paperweight mappings drift:** `CustomChunkGenerator.delegate` field name may change between Paper versions. Pin to 1.21.4 and add a version check on startup.
 - **Thread safety of injection:** `WorldInitEvent` is called from `ServerLevel.tick()` on each world's dedicated `tickExecutor` (not the main thread), and chunk generation immediately follows via Moonrise's concurrent system. All injection logic and the delegate itself must be thread-safe. The delegate is shared across multiple chunk generation threads.
+- **Stage 4 — pack reload semantics:** Initial implementation will load packs at plugin enable only. Hot-reloading mid-server is risky and will not be enabled.
+- **Stage 4 — schema versioning:** `pack.yml` should include a `schema_version: 1` field from day one so future schema changes can be detected and migrated cleanly.
+- **Stage 4 — registering generator IDs dynamically:** Bukkit picks the generator at world load via the static `Firma:<pack_id>` string, but `FirmaChunkGenerator` must validate the pack exists at construction and fail loudly with a clear message if a referenced pack id is missing.
