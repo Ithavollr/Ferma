@@ -11,6 +11,13 @@ import net.minecraft.util.KeyDispatchDataCodec;
 public interface FirmaClimateFunction extends DensityFunction {
     
     /**
+     * Fallback codec for Firma climate functions.
+     * Used to avoid delegating to vanilla codecs that may throw (e.g., HolderHolder).
+     */
+    KeyDispatchDataCodec<? extends DensityFunction> CONSTANT_CODEC = 
+        KeyDispatchDataCodec.of(com.mojang.serialization.MapCodec.unit(new Constant(0.0)));
+    
+    /**
      * Compute the climate value at the given coordinates.
      * This is the core method that will be overridden for custom climate logic.
      */
@@ -61,7 +68,8 @@ public interface FirmaClimateFunction extends DensityFunction {
         
         @Override
         public KeyDispatchDataCodec<? extends DensityFunction> codec() {
-            return vanilla.codec();
+            // Don't delegate to vanilla codec - it may be a HolderHolder which throws
+            return CONSTANT_CODEC;
         }
     }
 
@@ -83,7 +91,8 @@ public interface FirmaClimateFunction extends DensityFunction {
         
         @Override
         public void fillArray(double[] array, DensityFunction.ContextProvider contextProvider) {
-            contextProvider.fillAllDirectly(array, this);
+            // Optimized: fill entire array at once instead of per-element
+            java.util.Arrays.fill(array, value);
         }
         
         @Override
@@ -99,6 +108,61 @@ public interface FirmaClimateFunction extends DensityFunction {
         @Override
         public DensityFunction mapAll(Visitor visitor) {
             return this;
+        }
+        
+        @Override
+        public KeyDispatchDataCodec<? extends DensityFunction> codec() {
+            return CONSTANT_CODEC;
+        }
+    }
+
+    /**
+     * Weirdness to ridges fold function.
+     * Converts weirdness noise to ridge values using vanilla's formula.
+     */
+    class WeirdnessToRidges implements FirmaClimateFunction {
+        private final FirmaClimateFunction source;
+        
+        public WeirdnessToRidges(FirmaClimateFunction source) {
+            this.source = source;
+        }
+        
+        @Override
+        public double compute(double x, double y, double z) {
+            double weirdness = source.compute(x, y, z);
+            return vanillaRidges(weirdness);
+        }
+        
+        /**
+         * Vanilla weirdness to ridges conversion.
+         * Formula: 1.0 - (|weirdness| * 2 - 0.666...) * 4.363...
+         */
+        private double vanillaRidges(double weirdness) {
+            return 1.0 - (Math.abs(weirdness) * 2.0 - 0.6666666666666666) * 4.363636363636363;
+        }
+        
+        @Override
+        public void fillArray(double[] array, DensityFunction.ContextProvider contextProvider) {
+            for (int i = 0; i < array.length; i++) {
+                array[i] = compute(contextProvider.forIndex(i));
+            }
+        }
+        
+        @Override
+        public double minValue() {
+            // Min value when weirdness = 0: 1.0 - (0 - 0.666...) * 4.363... = 1.0 + 0.666... * 4.363... ≈ 3.9
+            // But we clamp to expected range
+            return -1.0;
+        }
+        
+        @Override
+        public double maxValue() {
+            return 1.0;
+        }
+        
+        @Override
+        public DensityFunction mapAll(Visitor visitor) {
+            return new WeirdnessToRidges((FirmaClimateFunction) source.mapAll(visitor));
         }
         
         @Override

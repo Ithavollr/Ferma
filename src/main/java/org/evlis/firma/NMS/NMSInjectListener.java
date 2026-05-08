@@ -17,6 +17,7 @@ import org.evlis.firma.FirmaChunkGenerator;
 import org.evlis.firma.FirmaChunkGenerator.GenerationMode;
 import org.evlis.firma.Reflection;
 import org.evlis.firma.noise.FirmaNoiseRouter;
+import org.evlis.firma.pack.FirmaPack;
 
 import java.lang.reflect.Field;
 import java.util.Set;
@@ -68,51 +69,45 @@ public class NMSInjectListener implements Listener {
             GenerationMode mode = firmaGenerator.getMode();
             plugin.getLogger().info("Generation mode: " + mode);
             
-            // For NOISE_OVERRIDE mode, patch the NoiseRouter
-            if (mode == GenerationMode.NOISE_OVERRIDE) {
+            // For PACK mode, patch the NoiseRouter using the pack's configuration
+            if (mode == GenerationMode.PACK) {
                 if (!(vanillaGenerator instanceof NoiseBasedChunkGenerator noiseGenerator)) {
-                    throw new IllegalStateException("NOISE_OVERRIDE mode requires NoiseBasedChunkGenerator, got: " + vanillaGenerator.getClass().getName());
+                    throw new IllegalStateException("PACK mode requires NoiseBasedChunkGenerator, got: " + vanillaGenerator.getClass().getName());
                 }
                 
-                // Patch the NoiseRouter in the generator's settings
-                try {
-                    // Get the settings from the generator
-                    var settings = noiseGenerator.settings.value();
-                    
-                    // Get the vanilla router from settings
-                    NoiseRouter vanillaRouter = settings.noiseRouter();
-                    
-                    // Patch the climate functions
-                    NoiseRouter patchedRouter = FirmaNoiseRouter.patchClimateFunctions(
-                        vanillaRouter, null, serverWorld.getSeed(), 
-                        FirmaNoiseRouter.PatchMode.VANILLA_NOISE // Use actual noise implementations
-                    );
-                    
-                    // Create new settings with patched router (NoiseGeneratorSettings is a record - immutable)
-                    var newSettings = new net.minecraft.world.level.levelgen.NoiseGeneratorSettings(
-                        settings.noiseSettings(),
-                        settings.defaultBlock(),
-                        settings.defaultFluid(),
-                        patchedRouter,
-                        settings.surfaceRule(),
-                        settings.spawnTarget(),
-                        settings.seaLevel(),
-                        settings.disableMobGeneration(),
-                        settings.isAquifersEnabled(),
-                        settings.oreVeinsEnabled(),
-                        settings.useLegacyRandomSource()
-                    );
-                    
-                    // Replace the settings in the generator
-                    java.lang.reflect.Field settingsField = net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator.class.getDeclaredField("settings");
-                    settingsField.setAccessible(true);
-                    settingsField.set(noiseGenerator, net.minecraft.core.Holder.direct(newSettings));
-                    
-                    plugin.getLogger().info("Patched NoiseRouter in NoiseGeneratorSettings");
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Failed to patch NoiseRouter via reflection: " + e.getMessage());
-                    e.printStackTrace();
-                    // Continue with vanilla generation if patching fails
+                // Get the pack
+                FirmaPack pack = firmaGenerator.getPack();
+                if (pack == null) {
+                    plugin.getLogger().warning("PACK mode but no pack found for world: " + world.getName());
+                } else {
+                    // Patch the NoiseRouter in the generator's settings
+                    try {
+                        // Get the settings from the generator
+                        var settings = noiseGenerator.settings.value();
+                        
+                        // Get the vanilla router from settings
+                        NoiseRouter vanillaRouter = settings.noiseRouter();
+                        
+                        // Patch the climate functions using the pack
+                        NoiseRouter patchedRouter = FirmaNoiseRouter.patchClimateFunctions(
+                            vanillaRouter, serverWorld.getSeed(), pack
+                        );
+                        
+                        // Patch ONLY the RandomState.router (transient, not serialized).
+                        // Replacing NoiseBasedChunkGenerator.settings with a Direct holder would
+                        // corrupt level.dat on save (our custom DensityFunctions encode as empty {}).
+                        // The RandomState's router is what's actually used for both terrain
+                        // generation and biome placement (via Climate.Sampler).
+                        RandomState randomState = serverWorld.getChunkSource().randomState();
+                        java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");
+                        routerField.setAccessible(true);
+                        routerField.set(randomState, patchedRouter);
+                        plugin.getLogger().info("Patched RandomState.router using pack: " + pack.id());
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("Failed to patch NoiseRouter via reflection: " + e.getMessage());
+                        e.printStackTrace();
+                        // Continue with vanilla generation if patching fails
+                    }
                 }
             }
 

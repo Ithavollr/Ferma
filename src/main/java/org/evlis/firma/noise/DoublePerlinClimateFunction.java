@@ -58,7 +58,23 @@ public class DoublePerlinClimateFunction implements FirmaClimateFunction {
     
     @Override
     public void fillArray(double[] array, DensityFunction.ContextProvider contextProvider) {
-        contextProvider.fillAllDirectly(array, this);
+        // Custom batch processing using forIndex
+        for (int i = 0; i < array.length; i++) {
+            DensityFunction.FunctionContext context = contextProvider.forIndex(i);
+            int x = context.blockX();
+            int y = context.blockY();
+            int z = context.blockZ();
+            
+            // Compute shifted coordinates
+            double shiftX = shiftXSampler.sample(x * 0.25, 0, z * 0.25) * 8.0;
+            double shiftZ = shiftZSampler.sample(x * 0.25, 0, z * 0.25) * 8.0;
+            
+            double nx = (x + shiftX) * xzScale;
+            double ny = y * yScale;
+            double nz = (z + shiftZ) * xzScale;
+            
+            array[i] = mainSampler.sample(nx, ny, nz);
+        }
     }
     
     @Override

@@ -1,0 +1,47 @@
+# Custom Noise Pack Example
+# Demonstrates using DoublePerlin noise for custom climate generation
+
+id: custom_noise
+name: "Custom Noise"
+description: "Custom noise-based climate (similar to vanilla but with custom parameters)"
+
+climate:
+  temperature:
+    type: double_perlin
+    first_octave: -10
+    amplitudes: [1.5, 0.0, 1.0, 0.0, 0.0, 0.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+
+  humidity:
+    type: double_perlin
+    first_octave: -8
+    amplitudes: [1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+
+  continentalness:
+    type: double_perlin
+    first_octave: -9
+    amplitudes: [1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+
+  erosion:
+    type: double_perlin
+    first_octave: -9
+    amplitudes: [1.0, 1.0, 0.0, 1.0, 1.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+
+  weirdness:
+    type: double_perlin
+    first_octave: -7
+    amplitudes: [1.0, 2.0, 1.0, 0.0, 0.0, 0.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+
+  depth:
+    type: y_clamped_gradient
+    min_y: -64
+    max_y: 320

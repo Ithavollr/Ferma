@@ -5,6 +5,8 @@ import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.NoiseRouter;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.synth.NormalNoise;
+import org.evlis.firma.pack.ClimateFunctionFactory;
+import org.evlis.firma.pack.FirmaPack;
 
 /**
  * Utility to patch vanilla NoiseRouter with Firma's climate functions.
@@ -12,6 +14,53 @@ import net.minecraft.world.level.levelgen.synth.NormalNoise;
  * while leaving everything else unchanged.
  */
 public class FirmaNoiseRouter {
+    
+    /**
+     * Create a patched NoiseRouter using a pack's climate configuration.
+     * This is the Stage 4 pack-based entry point.
+     */
+    public static NoiseRouter patchClimateFunctions(NoiseRouter vanillaRouter,
+                                                   long seed,
+                                                   FirmaPack pack) {
+        ClimateFunctionFactory factory = new ClimateFunctionFactory(seed, pack.id());
+        
+        // Build climate functions from pack configuration
+        DensityFunction temperature = factory.build(
+            pack.getClimateConfig("temperature"), "temperature", vanillaRouter.temperature());
+        DensityFunction humidity = factory.build(
+            pack.getClimateConfig("humidity"), "humidity", vanillaRouter.vegetation());
+        DensityFunction continents = factory.build(
+            pack.getClimateConfig("continentalness"), "continentalness", vanillaRouter.continents());
+        DensityFunction erosion = factory.build(
+            pack.getClimateConfig("erosion"), "erosion", vanillaRouter.erosion());
+        DensityFunction weirdness = factory.build(
+            pack.getClimateConfig("weirdness"), "weirdness", vanillaRouter.ridges());
+        
+        // Depth needs special handling - it depends on continentalness
+        // For now, use the pack config or default to vanilla-style depth
+        DensityFunction depth = factory.build(
+            pack.getClimateConfig("depth"), "depth", vanillaRouter.depth());
+        
+        // Pass vanilla functions directly for non-climate fields - wrapping them in Identity
+        // would cause per-call SinglePointContext allocations on hot terrain-gen paths.
+        return new NoiseRouter(
+            vanillaRouter.barrierNoise(),
+            vanillaRouter.fluidLevelFloodednessNoise(),
+            vanillaRouter.fluidLevelSpreadNoise(),
+            vanillaRouter.lavaNoise(),
+            temperature,
+            humidity,
+            continents,
+            erosion,
+            depth,
+            weirdness,
+            vanillaRouter.initialDensityWithoutJaggedness(),
+            vanillaRouter.finalDensity(),
+            vanillaRouter.veinToggle(),
+            vanillaRouter.veinRidged(),
+            vanillaRouter.veinGap()
+        );
+    }
     
     /**
      * Create a patched NoiseRouter with Firma's climate functions.

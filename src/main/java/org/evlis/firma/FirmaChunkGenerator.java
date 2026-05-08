@@ -5,6 +5,7 @@ import org.bukkit.generator.BlockPopulator;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 import org.bukkit.World;
+import org.evlis.firma.pack.FirmaPack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,25 +28,28 @@ public class FirmaChunkGenerator extends ChunkGenerator {
     public enum GenerationMode {
         /** Faithful vanilla pass-through (Stage 1) */
         VANILLA,
-        /** Noise parameter override mode (Stage 2) */
-        NOISE_OVERRIDE,
         /** Void/empty chunk mode (Stage 3) */
-        VOID
+        VOID,
+        /** Pack-based configuration (Stage 4) */
+        PACK
     }
 
     private final Firma plugin;
     private final GenerationMode mode;
+    private final String packId;
+    private FirmaPack cachedPack;
 
     /**
      * Creates a Firma chunk generator with the specified mode.
      *
      * @param plugin The plugin instance
-     * @param modeId The generation mode string ("vanilla", "noise", "void"), or null for default
+     * @param modeId The generation mode string ("vanilla", "void", or pack id), or null for default
      */
     public FirmaChunkGenerator(Firma plugin, @Nullable String modeId) {
         this.plugin = plugin;
+        this.packId = modeId;
         this.mode = parseMode(modeId);
-        plugin.getLogger().info("Created Firma generator with mode: " + mode);
+        plugin.getLogger().info("Created Firma generator with mode: " + mode + (mode == GenerationMode.PACK ? " (pack: " + modeId + ")" : ""));
     }
 
     /**
@@ -58,13 +62,29 @@ public class FirmaChunkGenerator extends ChunkGenerator {
         }
         return switch (modeId.toLowerCase()) {
             case "vanilla" -> GenerationMode.VANILLA;
-            case "noise", "noise_override" -> GenerationMode.NOISE_OVERRIDE;
             case "void" -> GenerationMode.VOID;
             default -> {
-                plugin.getLogger().warning("Unknown generation mode '" + modeId + "', defaulting to VANILLA");
+                // Check if it's a pack id
+                if (plugin.hasPack(modeId)) {
+                    yield GenerationMode.PACK;
+                }
+                plugin.getLogger().warning("Unknown generation mode or pack id '" + modeId + "', defaulting to VANILLA");
                 yield GenerationMode.VANILLA;
             }
         };
+    }
+    
+    /**
+     * Get the pack for this generator (only valid in PACK mode).
+     */
+    public @Nullable FirmaPack getPack() {
+        if (mode != GenerationMode.PACK) {
+            return null;
+        }
+        if (cachedPack == null && packId != null) {
+            cachedPack = plugin.getPack(packId);
+        }
+        return cachedPack;
     }
 
     /**
@@ -72,6 +92,13 @@ public class FirmaChunkGenerator extends ChunkGenerator {
      */
     public GenerationMode getMode() {
         return mode;
+    }
+    
+    /**
+     * Get the pack id for this generator.
+     */
+    public @Nullable String getPackId() {
+        return packId;
     }
 
     /**
