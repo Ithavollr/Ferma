@@ -1,4 +1,4 @@
-package org.evlis.firma;
+package org.evlis.firma.NMS;
 
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
@@ -43,11 +43,11 @@ public class NMSChunkGeneratorDelegate extends ChunkGenerator {
     }
 
     /**
-     * Delegate everything to vanilla - no modifications.
+     * Return unsafe codec - required by ChunkGenerator but we never serialize this.
      */
     @Override
     protected @NotNull MapCodec<? extends ChunkGenerator> codec() {
-        return vanilla.codec();
+        return MapCodec.assumeMapUnsafe(ChunkGenerator.CODEC);
     }
 
     /**
@@ -146,22 +146,6 @@ public class NMSChunkGeneratorDelegate extends ChunkGenerator {
     @Override
     public void addDebugScreenInfo(@NotNull List<String> text, @NotNull RandomState noiseConfig, @NotNull BlockPos pos) {
         vanilla.addDebugScreenInfo(text, noiseConfig, pos);
-    }
-
-    /**
-     * Delegate pack ID to vanilla.
-     */
-    @Override
-    public @NotNull String getPackId() {
-        return vanilla.getPackId();
-    }
-
-    /**
-     * Check if this delegate has stronghold positions (delegate to vanilla).
-     */
-    @Override
-    public boolean hasStrongholdPositions() {
-        return vanilla.hasStrongholdPositions();
     }
 
     /**
