@@ -1,0 +1,6 @@
+name: Firma
+version: '${version}'
+
+main: org.evlis.firma.Firma
+api-version: '1.21.4'
+load: POSTWORLD
