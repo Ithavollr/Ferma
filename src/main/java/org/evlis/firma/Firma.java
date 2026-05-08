@@ -8,11 +8,12 @@ import org.evlis.firma.NMS.NMSInjectListener;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 public final class Firma extends JavaPlugin {
-    private final Map<String, FirmaChunkGenerator> generatorMap = new HashMap<>();
+    // Thread-safe map for concurrent world initialization
+    private final Map<String, FirmaChunkGenerator> generatorMap = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
@@ -29,11 +30,21 @@ public final class Firma extends JavaPlugin {
 
     /**
      * Called by Bukkit when a world is created with generator: Firma
+     *
+     * The id parameter can specify the generation mode:
+     *   - "vanilla" or null: Faithful vanilla pass-through (Stage 1, default)
+     *   - "noise": Noise parameter override (Stage 2)
+     *   - "void": Void/empty chunks (Stage 3)
+     *
+     * Example bukkit.yml:
+     *   worlds:
+     *     my_world:
+     *       generator: Firma:noise
      */
     @Override
     public @Nullable ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, @Nullable String id) {
         getLogger().info("Creating Firma generator for world: " + worldName + " with id: " + id);
-        return generatorMap.computeIfAbsent(worldName, name -> new FirmaChunkGenerator(this));
+        return generatorMap.computeIfAbsent(worldName, name -> new FirmaChunkGenerator(this, id));
     }
 
     public boolean isFirmaWorld(World world) {

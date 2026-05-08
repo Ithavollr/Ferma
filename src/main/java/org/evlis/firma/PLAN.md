@@ -83,6 +83,117 @@ Vanilla samples these during biome selection and terrain shaping. If we replace 
 
 ---
 
+## Stage 2 Implementation: Noise Function Inventory
+
+To replicate vanilla 1.21.4 climate sampling without using Mojang's `DensityFunction` tree, we need to hand-implement the underlying noise primitives in pure Java math. Reference implementations exist in `NMS-1.17.1/util/math/noise/` (the noise primitives are largely unchanged between 1.17 and 1.21 — only the *composition* moved from hardcoded Java to JSON-driven density function trees).
+
+### Tier 1: Core Noise Primitives
+
+These are the foundational building blocks. Everything else composes from these.
+
+1. **`PerlinNoiseSampler`** — Classic 3D improved Perlin noise (Ken Perlin's 2002 algorithm).
+   - 256-byte permutation table seeded from RNG
+   - Uses 16 standard gradient vectors (`SimplexNoiseSampler.GRADIENTS`)
+   - Trilinear interpolation with quintic fade curve `f(t) = 6t^5 - 15t^4 + 10t^3`
+   - Reference: `PerlinNoiseSampler.java` (1.17)
+   - **Stateless after construction → thread-safe ✓**
+
+2. **`SimplexNoiseSampler`** — Simplex noise (used for End islands and biome layer mutation).
+   - Same 256-byte permutation table approach as Perlin
+   - 12 gradient vectors for 3D, skew/unskew constants `F2 = 0.5 * (sqrt(3) - 1)`, `G2 = (3 - sqrt(3)) / 6`
+   - Returns values normalized to roughly `[-1, 1]`
+   - Reference: `SimplexNoiseSampler.java` (1.17)
+   - **Stateless after construction → thread-safe ✓**
+   - *May not be needed if we don't target End/Nether — defer until proven necessary.*
+
+### Tier 2: Octave Compositions
+
+These layer multiple Perlin samplers at different frequencies and amplitudes.
+
+3. **`OctavePerlinNoiseSampler`** — Multiple `PerlinNoiseSampler`s combined for fractal noise.
+   - Configurable octave list (e.g. `firstOctave = -7`, amplitudes `[1.0, 1.0]`)
+   - Each octave doubles frequency and halves amplitude (typical fBm)
+   - Includes `maintainPrecision()` helper to avoid floating-point drift at large coordinates: `value - floor(value / 3.3554432E7) * 3.3554432E7`
+   - Reference: `OctavePerlinNoiseSampler.java` (1.17)
+
+4. **`DoublePerlinNoiseSampler`** — Two `OctavePerlinNoiseSampler`s combined with a `1/6` offset to mask grid artifacts.
+   - This is the workhorse for climate noise in 1.18+
+   - `sample(x, y, z) = (firstSampler.sample(x, y, z) + secondSampler.sample(x*1.0181268882175227, y*1.0181268882175227, z*1.0181268882175227)) * (1/6 * (10/9))`
+   - The amplitude factor normalizes output back to `[-1, 1]` range
+   - Reference: `DoublePerlinNoiseSampler.java` (1.17)
+   - **This is the type used for all 6 climate parameters in `MultiNoiseBiomeSource`**
+
+5. **`InterpolatedNoiseSampler`** — The "main" terrain noise (sloped cheese / blob noise).
+   - Uses 3 `OctavePerlinNoiseSampler`s: lower, upper, interpolation
+   - The interpolation noise blends between lower and upper at each point
+   - Octaves: lower/upper use `[-15, 0]` (16 octaves), interpolation uses `[-7, 0]` (8 octaves)
+   - Reference: `InterpolatedNoiseSampler.java` (1.17)
+   - **Used for `final_density` / terrain shape — only needed if Stage 2 expands beyond climate to terrain shape itself.** For climate-only override, skip this.
+
+### Tier 3: Climate Parameter Sources
+
+In 1.18+, all 6 climate parameters use **`DoublePerlinNoiseSampler`** with specific octave/amplitude configurations defined in `worldgen/noise/`. The configurations from `worldgen/noise_settings/overworld.json` are:
+
+| Parameter         | Vanilla noise ID                  | Type                       | Notes                                    |
+| ----------------- | --------------------------------- | -------------------------- | ---------------------------------------- |
+| temperature       | `minecraft:temperature`           | `DoublePerlinNoiseSampler` | Wrapped in `shifted_noise` (XZ shifts)   |
+| humidity          | `minecraft:vegetation`            | `DoublePerlinNoiseSampler` | Wrapped in `shifted_noise`               |
+| continentalness   | `minecraft:continentalness`       | `DoublePerlinNoiseSampler` | Used directly                            |
+| erosion           | `minecraft:erosion`               | `DoublePerlinNoiseSampler` | Used directly                            |
+| weirdness         | `minecraft:ridge`                 | `DoublePerlinNoiseSampler` | Folded via `weirdness → ridges` formula  |
+| depth             | *(synthesized)*                   | Y-clamped gradient + offset | `1.0 - y/128.0` clamped, plus terrain    |
+
+We will need to **fetch the exact octave/amplitude parameters** from the vanilla noise registry at runtime (or hardcode them from the JSON). They are NOT all `DEFAULT_NOISE_PARAMETERS` — each parameter has its own octave configuration.
+
+### Tier 4: Helper Functions
+
+6. **`shifted_noise` wrapper** — Used by temperature and humidity in 1.18+.
+   - Samples `shift_x` and `shift_z` noises (themselves `DoublePerlinNoiseSampler`s with `minecraft:offset` config) at the input position
+   - Adds those shifts (multiplied by 4) to the input coordinates
+   - Then samples the base noise at the shifted position
+   - Formula: `base.sample(x*xz_scale + shift_x.sample(x,y,z)*4, y*y_scale, z*xz_scale + shift_z.sample(x,y,z)*4)`
+
+7. **`weirdness → ridges` fold** — Converts raw weirdness into the "PV" (peaks/valleys) curve.
+   - `ridges = -3 * (|weirdness| - 2/3)` *(the standard "ridge" fold)*
+   - Used by `MultiNoiseBiomeSource` for biome selection, NOT by `final_density`
+
+8. **`y_clamped_gradient` for depth** — Linear gradient over Y for depth parameter.
+   - `depth(y) = clamp(1.0 - y/128.0, -1.0, 1.0)` (approximately — verify exact formula)
+   - Then optionally offset by terrain shape
+
+### Tier 5: RNG (Required for Determinism)
+
+9. **`XoroshiroRandomSource` / `LegacyRandomSource`** — Vanilla seeded RNG.
+   - 1.18+ uses Xoroshiro128++ for new noise sources
+   - We must replicate this exactly to get bit-identical output to vanilla
+   - Used to generate the permutation tables for each `PerlinNoiseSampler`
+   - Reference: Mojang's `RandomSupport` and `XoroshiroRandomSource`
+
+10. **`PositionalRandomFactory`** — Per-position deterministic randoms.
+    - Used to seed sub-noises from the world seed + a string identifier (the noise ID)
+    - Hashes the noise ID into a seed offset for reproducibility
+
+### Implementation Order (Dependencies)
+
+```
+LegacyRandomSource ──┐
+XoroshiroRandomSource ┴── PositionalRandomFactory ──┐
+                                                    ├── PerlinNoiseSampler ──┬── OctavePerlinNoiseSampler ── DoublePerlinNoiseSampler ──┬── 6 climate noises
+                                                    └── SimplexNoiseSampler                                                              └── shifted_noise wrapper
+```
+
+### Verification Strategy
+
+For each noise function:
+1. Implement in pure Java
+2. Sample at known coordinates with a fixed seed
+3. Compare bit-for-bit to vanilla NMS output (instrument vanilla via reflection in a test world, or capture with Mixin)
+4. Only proceed to the next tier when current tier matches vanilla exactly
+
+**Critical:** We don't need to replicate the full noise tree — just the climate sources. Vanilla's `final_density`, `vein_*`, `aquifer_*`, etc. continue to be computed by vanilla. We only swap out the 6 climate density functions.
+
+---
+
 ## Stage 3 — Void / Static Mode
 
 **Goal:** Support worlds that should produce **completely empty chunks**, e.g. for void worlds or pre-generated static worlds that shouldn't extend further.

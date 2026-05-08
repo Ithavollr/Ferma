@@ -14,9 +14,8 @@ import org.evlis.firma.FirmaChunkGenerator;
 import org.evlis.firma.Reflection;
 
 import java.lang.reflect.Field;
-import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Listens for WorldInitEvent and injects our NMSChunkGeneratorDelegate into the world's chunk generation pipeline.
@@ -24,8 +23,8 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class NMSInjectListener implements Listener {
     private final Firma plugin;
-    private final Set<World> injectedWorlds = new HashSet<>();
-    private final ReentrantLock injectLock = new ReentrantLock();
+    // Thread-safe set for tracking injected worlds (concurrent world initialization)
+    private final Set<World> injectedWorlds = ConcurrentHashMap.newKeySet();
 
     public NMSInjectListener(Firma plugin) {
         this.plugin = plugin;
@@ -34,24 +33,18 @@ public class NMSInjectListener implements Listener {
     @EventHandler
     public void onWorldInit(WorldInitEvent event) {
         World world = event.getWorld();
-        
+
         // Check if this world is using our generator
-        if (!(world.getGenerator() instanceof FirmaChunkGenerator)) {
+        if (!(world.getGenerator() instanceof FirmaChunkGenerator firmaGenerator)) {
             return; // Not a Firma world, skip
         }
 
-        // Prevent duplicate injection
-        if (injectedWorlds.contains(world)) {
-            return;
+        // Prevent duplicate injection (thread-safe)
+        if (!injectedWorlds.add(world)) {
+            return; // Already injected
         }
 
-        injectLock.lock();
         try {
-            if (injectedWorlds.contains(world)) {
-                return; // Double-check after acquiring lock
-            }
-            injectedWorlds.add(world);
-
             plugin.getLogger().info("Injecting Firma into world: " + world.getName());
 
             // Get the NMS ServerLevel from CraftWorld
@@ -63,6 +56,7 @@ public class NMSInjectListener implements Listener {
             plugin.getLogger().info("Captured generator: " + currentGenerator.getClass().getName());
 
             // If it's CustomChunkGenerator, unwrap to get the real vanilla generator
+            // For Stage 1 (VANILLA), we always need to unwrap to get the real NoiseBasedChunkGenerator
             ChunkGenerator vanillaGenerator = unwrapToVanilla(currentGenerator);
             plugin.getLogger().info("Unwrapped to vanilla: " + vanillaGenerator.getClass().getName());
 
@@ -70,7 +64,7 @@ public class NMSInjectListener implements Listener {
             ChunkMap chunkMap = serverWorld.getChunkSource().chunkMap;
             WorldGenContext worldGenContext = Reflection.CHUNKMAP.getWorldGenContext(chunkMap);
 
-            // Create our no-op delegate that wraps the vanilla generator
+            // Create our delegate that wraps the vanilla generator
             NMSChunkGeneratorDelegate delegate = new NMSChunkGeneratorDelegate(vanillaGenerator);
 
             // Replace the WorldGenContext's generator with our delegate
@@ -90,8 +84,6 @@ public class NMSInjectListener implements Listener {
         } catch (Exception e) {
             plugin.getLogger().severe("Failed to inject Firma into world: " + world.getName());
             e.printStackTrace();
-        } finally {
-            injectLock.unlock();
         }
     }
 
@@ -99,11 +91,17 @@ public class NMSInjectListener implements Listener {
      * Unwrap CustomChunkGenerator to get the actual vanilla NMS generator.
      * CustomChunkGenerator is Paper's wrapper that bridges Bukkit API to NMS.
      * We need the real vanilla generator inside it.
+     *
+     * Stage 1 Requirement: Must successfully unwrap to get NoiseBasedChunkGenerator
+     * for faithful vanilla generation. If unwrapping fails, we cannot proceed.
      */
-    private ChunkGenerator unwrapToVanilla(ChunkGenerator generator) {
-        // If it's not CustomChunkGenerator, assume it's already vanilla
+    private ChunkGenerator unwrapToVanilla(ChunkGenerator generator) throws IllegalStateException {
+        // If it's not CustomChunkGenerator, this is unexpected - fail loudly
         if (!generator.getClass().getName().equals("org.bukkit.craftbukkit.generator.CustomChunkGenerator")) {
-            return generator;
+            throw new IllegalStateException(
+                "Expected CustomChunkGenerator but got: " + generator.getClass().getName() +
+                ". This indicates an unexpected server configuration."
+            );
         }
 
         try {
@@ -115,6 +113,8 @@ public class NMSInjectListener implements Listener {
             if (delegate != null) {
                 plugin.getLogger().info("Extracted delegate: " + delegate.getClass().getName());
                 return delegate;
+            } else {
+                throw new IllegalStateException("CustomChunkGenerator delegate field is null");
             }
         } catch (NoSuchFieldException e) {
             // Try alternative field names
@@ -131,14 +131,11 @@ public class NMSInjectListener implements Listener {
                     }
                 }
             } catch (IllegalAccessException ex) {
-                plugin.getLogger().warning("Could not access ChunkGenerator fields: " + ex.getMessage());
+                throw new IllegalStateException("Could not access ChunkGenerator fields", ex);
             }
+            throw new IllegalStateException("Could not find delegate field in CustomChunkGenerator", e);
         } catch (IllegalAccessException e) {
-            plugin.getLogger().warning("Could not access delegate field: " + e.getMessage());
+            throw new IllegalStateException("Could not access delegate field", e);
         }
-
-        // Fallback: return the original (injection will be suboptimal but won't crash)
-        plugin.getLogger().warning("Could not unwrap CustomChunkGenerator, using as-is");
-        return generator;
     }
 }

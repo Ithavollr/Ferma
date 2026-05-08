@@ -13,24 +13,86 @@ import java.util.Random;
 
 /**
  * Bukkit ChunkGenerator wrapper for Firma.
- * This class exists solely to identify worlds that should use our NMS injection.
- * All actual generation is delegated to vanilla by NMSChunkGeneratorDelegate.
+ * This class serves as a marker to identify worlds using our NMS injection
+ * and carries the generation mode configuration per-world.
+ *
+ * For Stage 1 (VANILLA): Does not override generateNoise - let Paper/CustomChunkGenerator fall through.
+ * For Stage 3 (VOID): Will override generateNoise with empty implementation.
  */
 public class FirmaChunkGenerator extends ChunkGenerator {
-    private final Firma plugin;
 
-    public FirmaChunkGenerator(Firma plugin) {
+    /**
+     * Generation modes for Firma worlds.
+     */
+    public enum GenerationMode {
+        /** Faithful vanilla pass-through (Stage 1) */
+        VANILLA,
+        /** Noise parameter override mode (Stage 2) */
+        NOISE_OVERRIDE,
+        /** Void/empty chunk mode (Stage 3) */
+        VOID
+    }
+
+    private final Firma plugin;
+    private final GenerationMode mode;
+
+    /**
+     * Creates a Firma chunk generator with the specified mode.
+     *
+     * @param plugin The plugin instance
+     * @param modeId The generation mode string ("vanilla", "noise", "void"), or null for default
+     */
+    public FirmaChunkGenerator(Firma plugin, @Nullable String modeId) {
         this.plugin = plugin;
+        this.mode = parseMode(modeId);
+        plugin.getLogger().info("Created Firma generator with mode: " + mode);
     }
 
     /**
-     * We don't generate noise here - vanilla handles it.
-     * This method should never be called because we inject at the NMS level.
+     * Parse the mode string into a GenerationMode enum.
+     * Defaults to VANILLA if null or unrecognized.
+     */
+    private GenerationMode parseMode(@Nullable String modeId) {
+        if (modeId == null || modeId.isEmpty()) {
+            return GenerationMode.VANILLA;
+        }
+        return switch (modeId.toLowerCase()) {
+            case "vanilla" -> GenerationMode.VANILLA;
+            case "noise", "noise_override" -> GenerationMode.NOISE_OVERRIDE;
+            case "void" -> GenerationMode.VOID;
+            default -> {
+                plugin.getLogger().warning("Unknown generation mode '" + modeId + "', defaulting to VANILLA");
+                yield GenerationMode.VANILLA;
+            }
+        };
+    }
+
+    /**
+     * Get the generation mode for this generator.
+     */
+    public GenerationMode getMode() {
+        return mode;
+    }
+
+    /**
+     * Generate noise for the chunk.
+     *
+     * Stage 1 (VANILLA): Not overridden - falls through to Paper's CustomChunkGenerator,
+     * which delegates to the real vanilla NoiseBasedChunkGenerator (after NMS injection).
+     *
+     * Stage 3 (VOID): Will be overridden to produce empty chunks.
      */
     @Override
     public void generateNoise(@NotNull WorldInfo worldInfo, @NotNull Random random, int x, int z, @NotNull ChunkData chunkData) {
-        plugin.getLogger().warning("generateNoise called on FirmaChunkGenerator - this should not happen!");
-        // Leave empty - vanilla NMS will handle generation
+        if (mode == GenerationMode.VOID) {
+            // Stage 3: Void mode - leave chunk empty
+            // This is the intended behavior for void worlds
+            return;
+        }
+        // Stage 1 & 2: Should not reach here - NMS injection handles generation
+        // If it does, log a warning but don't break (could be race condition or unexpected state)
+        plugin.getLogger().warning("generateNoise called on FirmaChunkGenerator with mode " + mode +
+                                   " at (" + x + ", " + z + ") - this may indicate an injection issue");
     }
 
     /**
