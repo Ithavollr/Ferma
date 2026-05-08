@@ -3,7 +3,10 @@ package org.evlis.firma.NMS;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.chunk.status.WorldGenContext;
+import net.minecraft.world.level.levelgen.NoiseRouter;
+import net.minecraft.world.level.levelgen.RandomState;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.event.EventHandler;
@@ -11,7 +14,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.world.WorldInitEvent;
 import org.evlis.firma.Firma;
 import org.evlis.firma.FirmaChunkGenerator;
+import org.evlis.firma.FirmaChunkGenerator.GenerationMode;
 import org.evlis.firma.Reflection;
+import org.evlis.firma.noise.FirmaNoiseRouter;
 
 import java.lang.reflect.Field;
 import java.util.Set;
@@ -56,15 +61,61 @@ public class NMSInjectListener implements Listener {
             plugin.getLogger().info("Captured generator: " + currentGenerator.getClass().getName());
 
             // If it's CustomChunkGenerator, unwrap to get the real vanilla generator
-            // For Stage 1 (VANILLA), we always need to unwrap to get the real NoiseBasedChunkGenerator
             ChunkGenerator vanillaGenerator = unwrapToVanilla(currentGenerator);
             plugin.getLogger().info("Unwrapped to vanilla: " + vanillaGenerator.getClass().getName());
+            
+            // Check generation mode
+            GenerationMode mode = firmaGenerator.getMode();
+            plugin.getLogger().info("Generation mode: " + mode);
+            
+            // For NOISE_OVERRIDE mode, we need to patch the NoiseRouter
+            if (mode == GenerationMode.NOISE_OVERRIDE) {
+                if (!(vanillaGenerator instanceof NoiseBasedChunkGenerator noiseGenerator)) {
+                    throw new IllegalStateException("NOISE_OVERRIDE mode requires NoiseBasedChunkGenerator, got: " + vanillaGenerator.getClass().getName());
+                }
+                
+                // Create a new RandomState with patched climate functions
+                try {
+                    // Get the registry access for creating RandomState
+                    var registryAccess = serverWorld.registryAccess();
+                    
+                    // Create new RandomState with patched router using the generator's settings
+                    RandomState vanillaRandomState = RandomState.create(
+                        noiseGenerator.settings.value(),
+                        registryAccess.lookupOrThrow(net.minecraft.core.registries.Registries.NOISE),
+                        serverWorld.getSeed()
+                    );
+                    
+                    NoiseRouter vanillaRouter = vanillaRandomState.router();
+                    
+                    // Patch the climate functions
+                    NoiseRouter patchedRouter = FirmaNoiseRouter.patchClimateFunctions(
+                        vanillaRouter, vanillaRandomState, serverWorld.getSeed(), 
+                        FirmaNoiseRouter.PatchMode.CONSTANT_HOT // Test with constant hot temperature
+                    );
+                    
+                    // Use reflection to patch the router in the RandomState
+                    java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");
+                    routerField.setAccessible(true);
+                    routerField.set(vanillaRandomState, patchedRouter);
+                    
+                    // Store the patched RandomState in the generator for later use
+                    java.lang.reflect.Field randomStateField = NoiseBasedChunkGenerator.class.getDeclaredField("randomState");
+                    randomStateField.setAccessible(true);
+                    randomStateField.set(noiseGenerator, vanillaRandomState);
+                    
+                    plugin.getLogger().info("Patched NoiseRouter for NOISE_OVERRIDE mode");
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Failed to patch NoiseRouter via reflection: " + e.getMessage());
+                    // Continue with vanilla generation if patching fails
+                }
+            }
 
             // Get the ChunkMap and its WorldGenContext
             ChunkMap chunkMap = serverWorld.getChunkSource().chunkMap;
             WorldGenContext worldGenContext = Reflection.CHUNKMAP.getWorldGenContext(chunkMap);
 
-            // Create our delegate that wraps the vanilla generator
+            // Create our delegate that wraps the (possibly patched) generator
             NMSChunkGeneratorDelegate delegate = new NMSChunkGeneratorDelegate(vanillaGenerator);
 
             // Replace the WorldGenContext's generator with our delegate

@@ -75,4 +75,5 @@ tasks.register<RunServer>("runServerInteractive_1-21-4") {
         hangar("Multiverse-Core", "5.6.1")
     }
     pluginJars.from(tasks.shadowJar)
+    systemProperty("net.kyori.adventure.text.warnWhenLegacyFormattingDetected", "false")
 }
