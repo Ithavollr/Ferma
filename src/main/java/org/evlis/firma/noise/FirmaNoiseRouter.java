@@ -53,13 +53,13 @@ public class FirmaNoiseRouter {
             PositionalRandomFactory factory = new PositionalRandomFactory(seed);
             
             // Create custom climate functions
-            // TODO: Fetch actual noise parameters from vanilla registry
+            // Build in dependency order: depth depends on continents
             FirmaClimateFunction temperature = createTemperatureFunction(factory, mode);
             FirmaClimateFunction humidity = createHumidityFunction(factory, mode);
             FirmaClimateFunction continents = createContinentsFunction(factory, mode);
             FirmaClimateFunction erosion = createErosionFunction(factory, mode);
             FirmaClimateFunction weirdness = createWeirdnessFunction(factory, mode);
-            FirmaClimateFunction depth = createDepthFunction(factory, mode);
+            FirmaClimateFunction depth = createDepthFunction(factory, mode, continents);
             
             return new NoiseRouter(
                 new FirmaClimateFunction.Identity(vanillaRouter.barrierNoise()),
@@ -82,57 +82,113 @@ public class FirmaNoiseRouter {
     }
     
     /**
-     * Create temperature function based on mode.
+     * Create temperature function - uses shifted DoublePerlin noise.
+     * Vanilla parameters: firstOctave=-10, amplitudes=[1.5, 0.0, 1.0, 0.0, 0.0, 0.0], xz_scale=0.25
      */
     private static FirmaClimateFunction createTemperatureFunction(PositionalRandomFactory factory, PatchMode mode) {
         if (mode == PatchMode.CONSTANT_HOT) {
-            return new FirmaClimateFunction.Constant(1.0); // Always hot
+            return new FirmaClimateFunction.Constant(1.0);
         }
-        // TODO: Implement actual temperature noise
-        return new FirmaClimateFunction.Constant(-1.0);
+        if (mode == PatchMode.FROZEN) {
+            return new FirmaClimateFunction.Constant(-1.0);
+        }
+        // Standard overworld temperature noise (used by VANILLA_NOISE and CUSTOM)
+        return new DoublePerlinClimateFunction(
+            factory,
+            "minecraft:temperature",
+            -10, // firstOctave
+            new double[]{1.5, 0.0, 1.0, 0.0, 0.0, 0.0}, // amplitudes
+            0.25, // xz_scale
+            0.0,  // y_scale (2D noise)
+            -1.5, // minValue
+            1.5   // maxValue
+        );
     }
     
     /**
-     * Create humidity function based on mode.
+     * Create humidity function - uses shifted DoublePerlin noise.
+     * Vanilla parameters: firstOctave=-8, amplitudes=[1.0, 1.0, 0.0, 0.0, 0.0, 0.0], xz_scale=0.25
      */
     private static FirmaClimateFunction createHumidityFunction(PositionalRandomFactory factory, PatchMode mode) {
-        if (mode == PatchMode.CONSTANT_HOT) {
-            return new FirmaClimateFunction.Constant(0.5); // Medium humidity
-        }
-        // TODO: Implement actual humidity noise
-        return new FirmaClimateFunction.Constant(0.0);
+        // Standard overworld vegetation/humidity noise (used by all non-constant modes)
+        return new DoublePerlinClimateFunction(
+            factory,
+            "minecraft:vegetation",
+            -8, // firstOctave
+            new double[]{1.0, 1.0, 0.0, 0.0, 0.0, 0.0}, // amplitudes
+            0.25, // xz_scale
+            0.0,  // y_scale (2D noise)
+            -1.0, // minValue
+            1.0   // maxValue
+        );
     }
     
     /**
-     * Create continents function based on mode.
+     * Create continentalness function - uses shifted DoublePerlin noise.
+     * Vanilla parameters: firstOctave=-9, amplitudes=[1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0], xz_scale=0.25
      */
     private static FirmaClimateFunction createContinentsFunction(PositionalRandomFactory factory, PatchMode mode) {
-        // TODO: Implement actual continentalness noise
-        return new FirmaClimateFunction.Constant(0.0);
+        // Standard overworld continentalness noise
+        return new DoublePerlinClimateFunction(
+            factory,
+            "minecraft:continentalness",
+            -9, // firstOctave
+            new double[]{1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0}, // amplitudes
+            0.25, // xz_scale
+            0.0,  // y_scale (2D noise)
+            -2.0, // minValue (amplified by 2.0 amplitudes)
+            2.0   // maxValue
+        );
     }
     
     /**
-     * Create erosion function based on mode.
+     * Create erosion function - uses shifted DoublePerlin noise.
+     * Vanilla parameters: firstOctave=-9, amplitudes=[1.0, 1.0, 0.0, 1.0, 1.0], xz_scale=0.25
      */
     private static FirmaClimateFunction createErosionFunction(PositionalRandomFactory factory, PatchMode mode) {
-        // TODO: Implement actual erosion noise
-        return new FirmaClimateFunction.Constant(0.0);
+        // Standard overworld erosion noise
+        return new DoublePerlinClimateFunction(
+            factory,
+            "minecraft:erosion",
+            -9, // firstOctave
+            new double[]{1.0, 1.0, 0.0, 1.0, 1.0}, // amplitudes
+            0.25, // xz_scale
+            0.0,  // y_scale (2D noise)
+            -1.0, // minValue
+            1.0   // maxValue
+        );
     }
     
     /**
-     * Create weirdness function based on mode.
+     * Create weirdness (ridges) function - uses shifted DoublePerlin noise.
+     * Vanilla parameters: firstOctave=-7, amplitudes=[1.0, 2.0, 1.0, 0.0, 0.0, 0.0], xz_scale=0.25
      */
     private static FirmaClimateFunction createWeirdnessFunction(PositionalRandomFactory factory, PatchMode mode) {
-        // TODO: Implement actual weirdness noise
-        return new FirmaClimateFunction.Constant(0.0);
+        // Standard overworld ridges/weirdness noise
+        DoublePerlinClimateFunction weirdness = new DoublePerlinClimateFunction(
+            factory,
+            "minecraft:ridge",
+            -7, // firstOctave
+            new double[]{1.0, 2.0, 1.0, 0.0, 0.0, 0.0}, // amplitudes
+            0.25, // xz_scale
+            0.0,  // y_scale (2D noise)
+            -1.5, // minValue
+            1.5   // maxValue
+        );
+        
+        // Return as-is (ridges fold is applied by vanilla, not by us)
+        return weirdness;
     }
     
     /**
-     * Create depth function based on mode.
+     * Create depth function - Y-clamped gradient + continentalness offset.
+     * Vanilla: yClampedGradient(-64, 320, 1.5, -1.5) + offset
      */
-    private static FirmaClimateFunction createDepthFunction(PositionalRandomFactory factory, PatchMode mode) {
-        // TODO: Implement actual depth gradient
-        return new FirmaClimateFunction.Constant(0.0);
+    private static FirmaClimateFunction createDepthFunction(PositionalRandomFactory factory, 
+                                                           PatchMode mode,
+                                                           FirmaClimateFunction continents) {
+        // Depth is gradient + continentalness offset
+        return new DepthClimateFunction(continents, -64, 320, 1.5, -1.5);
     }
     
     /**
@@ -143,7 +199,11 @@ public class FirmaNoiseRouter {
         IDENTITY,
         /** Constant hot mode - for testing climate override */
         CONSTANT_HOT,
-        /** Full custom mode - implement actual climate logic */
+        /** Frozen mode - for testing cold climate override */
+        FROZEN,
+        /** Vanilla noise mode - uses our noise implementations with vanilla parameters */
+        VANILLA_NOISE,
+        /** Full custom mode - for Stage 4 pack-based configuration */
         CUSTOM
     }
 }

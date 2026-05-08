@@ -74,39 +74,44 @@ public class NMSInjectListener implements Listener {
                     throw new IllegalStateException("NOISE_OVERRIDE mode requires NoiseBasedChunkGenerator, got: " + vanillaGenerator.getClass().getName());
                 }
                 
-                // Create a new RandomState with patched climate functions
+                // Patch the NoiseRouter in the generator's settings
                 try {
-                    // Get the registry access for creating RandomState
-                    var registryAccess = serverWorld.registryAccess();
+                    // Get the settings from the generator
+                    var settings = noiseGenerator.settings.value();
                     
-                    // Create new RandomState with patched router using the generator's settings
-                    RandomState vanillaRandomState = RandomState.create(
-                        noiseGenerator.settings.value(),
-                        registryAccess.lookupOrThrow(net.minecraft.core.registries.Registries.NOISE),
-                        serverWorld.getSeed()
-                    );
-                    
-                    NoiseRouter vanillaRouter = vanillaRandomState.router();
+                    // Get the vanilla router from settings
+                    NoiseRouter vanillaRouter = settings.noiseRouter();
                     
                     // Patch the climate functions
                     NoiseRouter patchedRouter = FirmaNoiseRouter.patchClimateFunctions(
-                        vanillaRouter, vanillaRandomState, serverWorld.getSeed(), 
-                        FirmaNoiseRouter.PatchMode.CONSTANT_HOT // Test with constant hot temperature
+                        vanillaRouter, null, serverWorld.getSeed(), 
+                        FirmaNoiseRouter.PatchMode.VANILLA_NOISE // Use actual noise implementations
                     );
                     
-                    // Use reflection to patch the router in the RandomState
-                    java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");
-                    routerField.setAccessible(true);
-                    routerField.set(vanillaRandomState, patchedRouter);
+                    // Create new settings with patched router (NoiseGeneratorSettings is a record - immutable)
+                    var newSettings = new net.minecraft.world.level.levelgen.NoiseGeneratorSettings(
+                        settings.noiseSettings(),
+                        settings.defaultBlock(),
+                        settings.defaultFluid(),
+                        patchedRouter,
+                        settings.surfaceRule(),
+                        settings.spawnTarget(),
+                        settings.seaLevel(),
+                        settings.disableMobGeneration(),
+                        settings.isAquifersEnabled(),
+                        settings.oreVeinsEnabled(),
+                        settings.useLegacyRandomSource()
+                    );
                     
-                    // Store the patched RandomState in the generator for later use
-                    java.lang.reflect.Field randomStateField = NoiseBasedChunkGenerator.class.getDeclaredField("randomState");
-                    randomStateField.setAccessible(true);
-                    randomStateField.set(noiseGenerator, vanillaRandomState);
+                    // Replace the settings in the generator
+                    java.lang.reflect.Field settingsField = net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator.class.getDeclaredField("settings");
+                    settingsField.setAccessible(true);
+                    settingsField.set(noiseGenerator, net.minecraft.core.Holder.direct(newSettings));
                     
-                    plugin.getLogger().info("Patched NoiseRouter for NOISE_OVERRIDE mode");
+                    plugin.getLogger().info("Patched NoiseRouter in NoiseGeneratorSettings");
                 } catch (Exception e) {
                     plugin.getLogger().warning("Failed to patch NoiseRouter via reflection: " + e.getMessage());
+                    e.printStackTrace();
                     // Continue with vanilla generation if patching fails
                 }
             }
