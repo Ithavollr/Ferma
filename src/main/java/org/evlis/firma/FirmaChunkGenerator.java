@@ -112,50 +112,50 @@ public class FirmaChunkGenerator extends ChunkGenerator {
     }
 
     /**
-     * Let vanilla handle caves.
+     * Let vanilla handle caves (except in VOID mode).
      */
     @Override
     public boolean shouldGenerateCaves() {
-        return true; // Delegate to vanilla
+        return mode != GenerationMode.VOID; // Disable in void mode
     }
 
     /**
-     * Let vanilla handle decorations.
+     * Let vanilla handle decorations (except in VOID mode).
      */
     @Override
     public boolean shouldGenerateDecorations() {
-        return true; // Delegate to vanilla
+        return mode != GenerationMode.VOID; // Disable in void mode
     }
 
     /**
-     * Let vanilla handle mobs.
+     * Let vanilla handle mobs (except in VOID mode).
      */
     @Override
     public boolean shouldGenerateMobs() {
-        return true; // Delegate to vanilla
+        return mode != GenerationMode.VOID; // Disable in void mode
     }
 
     /**
-     * Let vanilla handle structures.
+     * Let vanilla handle structures (except in VOID mode).
      */
     @Override
     public boolean shouldGenerateStructures() {
-        return true; // Delegate to vanilla
+        return mode != GenerationMode.VOID; // Disable in void mode
     }
 
     /**
-     * Let vanilla handle surface.
+     * Let vanilla handle surface (except in VOID mode).
      */
     @Override
     public boolean shouldGenerateSurface() {
-        return true; // Delegate to vanilla
+        return mode != GenerationMode.VOID; // Disable in void mode
     }
 
     /**
-     * Let vanilla handle bedrock.
+     * Let vanilla handle bedrock (except in VOID mode).
      */
     @Override
     public boolean shouldGenerateBedrock() {
-        return true; // Delegate to vanilla
+        return mode != GenerationMode.VOID; // Disable in void mode
     }
 }

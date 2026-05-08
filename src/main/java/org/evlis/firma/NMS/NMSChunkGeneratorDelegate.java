@@ -20,17 +20,23 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * A no-op chunk generator delegate that passes ALL operations to the vanilla generator.
- * This class exists to allow us to intercept the generation pipeline for future modifications.
- * Currently, it produces completely faithful vanilla worlds.
+ * A chunk generator delegate that wraps the vanilla generator.
+ * For VANILLA/NOISE_OVERRIDE modes: passes operations to vanilla (with possible NoiseRouter patches).
+ * For VOID mode: returns empty chunks without calling vanilla noise generation.
  */
 public class NMSChunkGeneratorDelegate extends ChunkGenerator {
     private final ChunkGenerator vanilla;
+    private final boolean voidMode;
 
     public NMSChunkGeneratorDelegate(ChunkGenerator vanilla) {
+        this(vanilla, false);
+    }
+
+    public NMSChunkGeneratorDelegate(ChunkGenerator vanilla, boolean voidMode) {
         // Pass the vanilla generator's biome source
         super(getBiomeSource(vanilla));
         this.vanilla = vanilla;
+        this.voidMode = voidMode;
     }
 
     private static BiomeSource getBiomeSource(ChunkGenerator generator) {
@@ -51,39 +57,47 @@ public class NMSChunkGeneratorDelegate extends ChunkGenerator {
     }
 
     /**
-     * Delegate cave generation to vanilla.
+     * Cave generation - skipped in VOID mode.
      */
     @Override
     public void applyCarvers(@NotNull WorldGenRegion chunkRegion, long seed, @NotNull RandomState noiseConfig,
                              @NotNull BiomeManager world, @NotNull StructureManager structureAccessor,
                              @NotNull ChunkAccess chunk) {
-        vanilla.applyCarvers(chunkRegion, seed, noiseConfig, world, structureAccessor, chunk);
+        if (!voidMode) {
+            vanilla.applyCarvers(chunkRegion, seed, noiseConfig, world, structureAccessor, chunk);
+        }
     }
 
     /**
-     * Delegate surface building to vanilla.
+     * Surface building - skipped in VOID mode.
      */
     @Override
     public void buildSurface(@NotNull WorldGenRegion region, @NotNull StructureManager structures,
                              @NotNull RandomState noiseConfig, @NotNull ChunkAccess chunk) {
-        vanilla.buildSurface(region, structures, noiseConfig, chunk);
+        if (!voidMode) {
+            vanilla.buildSurface(region, structures, noiseConfig, chunk);
+        }
     }
 
     /**
-     * Delegate biome decoration to vanilla.
+     * Biome decoration - skipped in VOID mode.
      */
     @Override
     public void applyBiomeDecoration(@NotNull WorldGenLevel world, @NotNull ChunkAccess chunk,
                                      @NotNull StructureManager structureAccessor) {
-        vanilla.applyBiomeDecoration(world, chunk, structureAccessor);
+        if (!voidMode) {
+            vanilla.applyBiomeDecoration(world, chunk, structureAccessor);
+        }
     }
 
     /**
-     * Delegate mob spawning to vanilla.
+     * Mob spawning - skipped in VOID mode.
      */
     @Override
     public void spawnOriginalMobs(@NotNull WorldGenRegion region) {
-        vanilla.spawnOriginalMobs(region);
+        if (!voidMode) {
+            vanilla.spawnOriginalMobs(region);
+        }
     }
 
     /**
@@ -95,14 +109,20 @@ public class NMSChunkGeneratorDelegate extends ChunkGenerator {
     }
 
     /**
-     * Delegate noise filling to vanilla - THIS IS THE CORE TERRAIN GENERATION.
-     * We pass through completely unmodified.
+     * Core terrain generation.
+     * VOID mode: Return chunk unchanged (empty).
+     * Other modes: Delegate to vanilla generator.
      */
     @Override
     public @NotNull CompletableFuture<ChunkAccess> fillFromNoise(@NotNull Blender blender,
                                                                   @NotNull RandomState noiseConfig,
                                                                   @NotNull StructureManager structureAccessor,
                                                                   @NotNull ChunkAccess chunk) {
+        if (voidMode) {
+            // VOID mode: Return chunk as-is (no terrain generation)
+            return CompletableFuture.completedFuture(chunk);
+        }
+        // Delegate to vanilla for terrain generation
         return vanilla.fillFromNoise(blender, noiseConfig, structureAccessor, chunk);
     }
 

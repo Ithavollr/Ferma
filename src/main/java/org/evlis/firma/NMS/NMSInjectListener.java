@@ -68,7 +68,7 @@ public class NMSInjectListener implements Listener {
             GenerationMode mode = firmaGenerator.getMode();
             plugin.getLogger().info("Generation mode: " + mode);
             
-            // For NOISE_OVERRIDE mode, we need to patch the NoiseRouter
+            // For NOISE_OVERRIDE mode, patch the NoiseRouter
             if (mode == GenerationMode.NOISE_OVERRIDE) {
                 if (!(vanillaGenerator instanceof NoiseBasedChunkGenerator noiseGenerator)) {
                     throw new IllegalStateException("NOISE_OVERRIDE mode requires NoiseBasedChunkGenerator, got: " + vanillaGenerator.getClass().getName());
@@ -121,7 +121,13 @@ public class NMSInjectListener implements Listener {
             WorldGenContext worldGenContext = Reflection.CHUNKMAP.getWorldGenContext(chunkMap);
 
             // Create our delegate that wraps the (possibly patched) generator
-            NMSChunkGeneratorDelegate delegate = new NMSChunkGeneratorDelegate(vanillaGenerator);
+            // For VOID mode, pass true to create empty chunks
+            boolean isVoidMode = (mode == GenerationMode.VOID);
+            NMSChunkGeneratorDelegate delegate = new NMSChunkGeneratorDelegate(vanillaGenerator, isVoidMode);
+            
+            if (isVoidMode) {
+                plugin.getLogger().info("VOID mode - will generate empty chunks for world: " + world.getName());
+            }
 
             // Replace the WorldGenContext's generator with our delegate
             WorldGenContext newContext = new WorldGenContext(
