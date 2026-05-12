@@ -43,4 +43,4 @@ The plugin JAR will be in `build/libs/Firma-<version>.jar`
 
 ## License
 
-TBD
+GPL 3.0
