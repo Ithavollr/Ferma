@@ -73,15 +73,6 @@ public final class Firma extends JavaPlugin {
     public @Nullable ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, @Nullable String id) {
         getLogger().info("Creating Firma generator for world: " + worldName + " with id: " + id);
         
-        // Reject legacy "noise" id completely
-        if ("noise".equalsIgnoreCase(id)) {
-            getLogger().severe("ERROR: 'Firma:noise' is no longer supported.");
-            getLogger().severe("Use 'Firma:passthrough' for vanilla climate, 'Firma:void' for empty worlds,");
-            getLogger().severe("or create a custom pack in plugins/Firma/packs/");
-            throw new IllegalArgumentException("Legacy 'Firma:noise' generator is no longer supported. " +
-                "Use 'Firma:passthrough' or a custom pack instead.");
-        }
-        
         // Check if id is a pack id
         if (id != null && !id.isEmpty() && !isReservedName(id) && !hasPack(id)) {
             getLogger().warning("Unknown pack id '" + id + "' for world: " + worldName);
