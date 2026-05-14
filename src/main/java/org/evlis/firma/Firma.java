@@ -10,8 +10,8 @@ import org.evlis.firma.pack.PackLoader;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class Firma extends JavaPlugin {
     // Thread-safe map for concurrent world initialization

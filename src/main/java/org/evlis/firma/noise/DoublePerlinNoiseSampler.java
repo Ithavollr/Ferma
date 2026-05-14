@@ -1,6 +1,5 @@
 package org.evlis.firma.noise;
 
-import java.util.List;
 import java.util.stream.IntStream;
 
 /**

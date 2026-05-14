@@ -1,8 +1,7 @@
 package org.evlis.firma.noise;
 
-import net.minecraft.world.level.levelgen.DensityFunction;
-import net.minecraft.world.level.levelgen.DensityFunction.SimpleFunction;
 import net.minecraft.util.KeyDispatchDataCodec;
+import net.minecraft.world.level.levelgen.DensityFunction;
 
 /**
  * Interface for Firma's custom climate noise functions.

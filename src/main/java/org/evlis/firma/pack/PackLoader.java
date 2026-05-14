@@ -1,13 +1,14 @@
 package org.evlis.firma.pack;
 
-import org.bukkit.plugin.Plugin;
 import org.evlis.firma.Firma;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 /**

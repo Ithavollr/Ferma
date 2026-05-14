@@ -1,8 +1,8 @@
 package org.evlis.firma.noise;
 
-import net.minecraft.world.level.levelgen.DensityFunction;
-import net.minecraft.util.KeyDispatchDataCodec;
 import com.mojang.serialization.MapCodec;
+import net.minecraft.util.KeyDispatchDataCodec;
+import net.minecraft.world.level.levelgen.DensityFunction;
 
 /**
  * Depth climate function combining Y-clamped gradient with continentalness offset.

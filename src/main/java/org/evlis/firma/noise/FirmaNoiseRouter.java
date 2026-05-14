@@ -1,10 +1,8 @@
 package org.evlis.firma.noise;
 
-import net.minecraft.core.Holder;
 import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.NoiseRouter;
 import net.minecraft.world.level.levelgen.RandomState;
-import net.minecraft.world.level.levelgen.synth.NormalNoise;
 import org.evlis.firma.pack.ClimateFunctionFactory;
 import org.evlis.firma.pack.FirmaPack;
 

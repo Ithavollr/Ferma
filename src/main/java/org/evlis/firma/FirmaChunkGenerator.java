@@ -1,10 +1,10 @@
 package org.evlis.firma;
 
+import org.bukkit.World;
 import org.bukkit.generator.BiomeProvider;
 import org.bukkit.generator.BlockPopulator;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
-import org.bukkit.World;
 import org.evlis.firma.pack.FirmaPack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;

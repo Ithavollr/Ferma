@@ -1,9 +1,10 @@
 package org.evlis.firma.pack;
 
 import net.minecraft.world.level.levelgen.DensityFunction;
-import org.evlis.firma.noise.*;
-
-import java.util.List;
+import org.evlis.firma.noise.DepthClimateFunction;
+import org.evlis.firma.noise.DoublePerlinClimateFunction;
+import org.evlis.firma.noise.FirmaClimateFunction;
+import org.evlis.firma.noise.PositionalRandomFactory;
 
 /**
  * Factory for building FirmaClimateFunction instances from ClimateFunctionConfig.
