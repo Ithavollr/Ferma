@@ -60,6 +60,13 @@ public record FirmaPack(
     }
     
     /**
+     * Check if this pack has an explicit configuration for a parameter.
+     */
+    public boolean hasClimateConfig(String parameter) {
+        return climate.containsKey(parameter);
+    }
+    
+    /**
      * Create a passthrough pack (all identity).
      */
     public static FirmaPack passthrough() {

@@ -22,22 +22,26 @@ public class FirmaNoiseRouter {
                                                    FirmaPack pack) {
         ClimateFunctionFactory factory = new ClimateFunctionFactory(seed, pack.id());
         
-        // Build climate functions from pack configuration
-        DensityFunction temperature = factory.build(
-            pack.getClimateConfig("temperature"), "temperature", vanillaRouter.temperature());
-        DensityFunction humidity = factory.build(
-            pack.getClimateConfig("humidity"), "humidity", vanillaRouter.vegetation());
-        DensityFunction continents = factory.build(
-            pack.getClimateConfig("continentalness"), "continentalness", vanillaRouter.continents());
-        DensityFunction erosion = factory.build(
-            pack.getClimateConfig("erosion"), "erosion", vanillaRouter.erosion());
-        DensityFunction weirdness = factory.build(
-            pack.getClimateConfig("weirdness"), "weirdness", vanillaRouter.ridges());
-        
-        // Depth needs special handling - it depends on continentalness
-        // For now, use the pack config or default to vanilla-style depth
-        DensityFunction depth = factory.build(
-            pack.getClimateConfig("depth"), "depth", vanillaRouter.depth());
+        // Only build custom functions for parameters explicitly configured in the pack.
+        // For unspecified parameters, use vanilla directly (no factory overhead, no wrapper).
+        DensityFunction temperature = pack.hasClimateConfig("temperature")
+            ? factory.build(pack.getClimateConfig("temperature"), "temperature", vanillaRouter.temperature())
+            : vanillaRouter.temperature();
+        DensityFunction humidity = pack.hasClimateConfig("humidity")
+            ? factory.build(pack.getClimateConfig("humidity"), "humidity", vanillaRouter.vegetation())
+            : vanillaRouter.vegetation();
+        DensityFunction continents = pack.hasClimateConfig("continentalness")
+            ? factory.build(pack.getClimateConfig("continentalness"), "continentalness", vanillaRouter.continents())
+            : vanillaRouter.continents();
+        DensityFunction erosion = pack.hasClimateConfig("erosion")
+            ? factory.build(pack.getClimateConfig("erosion"), "erosion", vanillaRouter.erosion())
+            : vanillaRouter.erosion();
+        DensityFunction weirdness = pack.hasClimateConfig("weirdness")
+            ? factory.build(pack.getClimateConfig("weirdness"), "weirdness", vanillaRouter.ridges())
+            : vanillaRouter.ridges();
+        DensityFunction depth = pack.hasClimateConfig("depth")
+            ? factory.build(pack.getClimateConfig("depth"), "depth", vanillaRouter.depth())
+            : vanillaRouter.depth();
         
         // Pass vanilla functions directly for non-climate fields - wrapping them in Identity
         // would cause per-call SinglePointContext allocations on hot terrain-gen paths.

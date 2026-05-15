@@ -9,18 +9,3 @@ climate:
   temperature:
     type: constant
     value: -1.0
-
-  humidity:
-    type: identity
-
-  continentalness:
-    type: identity
-
-  erosion:
-    type: identity
-
-  weirdness:
-    type: identity
-
-  depth:
-    type: identity
