@@ -73,11 +73,14 @@ public final class Firma extends JavaPlugin {
     public @Nullable ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, @Nullable String id) {
         getLogger().info("Creating Firma generator for world: " + worldName + " with id: " + id);
         
-        // Check if id is a pack id
+        // Reject unknown pack ids loudly - silently falling back to vanilla would let
+        // a typo (e.g. "Firma:frozn_world") silently produce a normal world.
         if (id != null && !id.isEmpty() && !isReservedName(id) && !hasPack(id)) {
-            getLogger().warning("Unknown pack id '" + id + "' for world: " + worldName);
-            getLogger().warning("Defaulting to vanilla mode");
-            id = null;
+            getLogger().severe("Unknown Firma generator id '" + id + "' for world '" + worldName + "'.");
+            getLogger().severe("Valid options: 'vanilla', 'void', or one of the loaded pack ids: " + packs.keySet());
+            throw new IllegalArgumentException(
+                "Unknown Firma generator id '" + id + "'. World creation aborted."
+            );
         }
         
         final String finalId = id;

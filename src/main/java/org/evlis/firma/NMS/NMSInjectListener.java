@@ -80,29 +80,69 @@ public class NMSInjectListener implements Listener {
                 if (pack == null) {
                     plugin.getLogger().warning("PACK mode but no pack found for world: " + world.getName());
                 } else {
-                    // Patch the NoiseRouter in the generator's settings
+                    // Patch the NoiseRouter in RandomState (transient, not serialized).
+                    // Replacing NoiseBasedChunkGenerator.settings with a Direct holder would
+                    // corrupt level.dat on save (our custom DensityFunctions encode as empty {}).
                     try {
-                        // Get the settings from the generator
-                        var settings = noiseGenerator.settings.value();
-                        
-                        // Get the vanilla router from settings
-                        NoiseRouter vanillaRouter = settings.noiseRouter();
+                        // CRITICAL: use the WIRED router from RandomState, not settings.noiseRouter().
+                        // settings.noiseRouter() is the un-wired version with unresolved HolderHolder
+                        // references and un-instantiated noise samplers. Using it would break terrain
+                        // (broken aquifer/fluid noise -> world flooded with water).
+                        RandomState randomState = serverWorld.getChunkSource().randomState();
+                        NoiseRouter wiredRouter = randomState.router();
                         
                         // Patch the climate functions using the pack
                         NoiseRouter patchedRouter = FirmaNoiseRouter.patchClimateFunctions(
-                            vanillaRouter, serverWorld.getSeed(), pack
+                            wiredRouter, serverWorld.getSeed(), pack
                         );
                         
-                        // Patch ONLY the RandomState.router (transient, not serialized).
-                        // Replacing NoiseBasedChunkGenerator.settings with a Direct holder would
-                        // corrupt level.dat on save (our custom DensityFunctions encode as empty {}).
-                        // The RandomState's router is what's actually used for both terrain
-                        // generation and biome placement (via Climate.Sampler).
-                        RandomState randomState = serverWorld.getChunkSource().randomState();
                         java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");
                         routerField.setAccessible(true);
                         routerField.set(randomState, patchedRouter);
-                        plugin.getLogger().info("Patched RandomState.router using pack: " + pack.id());
+                        
+                        // ALSO rebuild Climate.Sampler: it was constructed in RandomState's
+                        // constructor from the *original* router and captured independently.
+                        // MultiNoiseBiomeSource reads from sampler (not router) for biome lookup,
+                        // so without this step our custom climate funcs never reach biome placement.
+                        // Mirror vanilla's visitor that unwraps HolderHolder + Marker indirection.
+                        net.minecraft.world.level.levelgen.DensityFunction.Visitor visitor =
+                            new net.minecraft.world.level.levelgen.DensityFunction.Visitor() {
+                                private final java.util.Map<net.minecraft.world.level.levelgen.DensityFunction,
+                                        net.minecraft.world.level.levelgen.DensityFunction> wrapped = new java.util.HashMap<>();
+
+                                private net.minecraft.world.level.levelgen.DensityFunction wrapNew(
+                                        net.minecraft.world.level.levelgen.DensityFunction df) {
+                                    if (df instanceof net.minecraft.world.level.levelgen.DensityFunctions.HolderHolder hh) {
+                                        return hh.function().value();
+                                    }
+                                    if (df instanceof net.minecraft.world.level.levelgen.DensityFunctions.MarkerOrMarked marker) {
+                                        return marker.wrapped();
+                                    }
+                                    return df;
+                                }
+
+                                @Override
+                                public net.minecraft.world.level.levelgen.DensityFunction apply(
+                                        net.minecraft.world.level.levelgen.DensityFunction df) {
+                                    return wrapped.computeIfAbsent(df, this::wrapNew);
+                                }
+                            };
+                        var settings = noiseGenerator.settings.value();
+                        net.minecraft.world.level.biome.Climate.Sampler patchedSampler =
+                            new net.minecraft.world.level.biome.Climate.Sampler(
+                                patchedRouter.temperature().mapAll(visitor),
+                                patchedRouter.vegetation().mapAll(visitor),
+                                patchedRouter.continents().mapAll(visitor),
+                                patchedRouter.erosion().mapAll(visitor),
+                                patchedRouter.depth().mapAll(visitor),
+                                patchedRouter.ridges().mapAll(visitor),
+                                settings.spawnTarget()
+                            );
+                        java.lang.reflect.Field samplerField = RandomState.class.getDeclaredField("sampler");
+                        samplerField.setAccessible(true);
+                        samplerField.set(randomState, patchedSampler);
+                        
+                        plugin.getLogger().info("Patched RandomState.router + sampler using pack: " + pack.id());
                     } catch (Exception e) {
                         plugin.getLogger().warning("Failed to patch NoiseRouter via reflection: " + e.getMessage());
                         e.printStackTrace();

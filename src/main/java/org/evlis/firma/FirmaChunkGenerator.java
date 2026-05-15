@@ -54,7 +54,7 @@ public class FirmaChunkGenerator extends ChunkGenerator {
 
     /**
      * Parse the mode string into a GenerationMode enum.
-     * Defaults to VANILLA if null or unrecognized.
+     * Defaults to searching packs and failing if no match is found.
      */
     private GenerationMode parseMode(@Nullable String modeId) {
         if (modeId == null || modeId.isEmpty()) {
@@ -68,8 +68,12 @@ public class FirmaChunkGenerator extends ChunkGenerator {
                 if (plugin.hasPack(modeId)) {
                     yield GenerationMode.PACK;
                 }
-                plugin.getLogger().warning("Unknown generation mode or pack id '" + modeId + "', defaulting to VANILLA");
-                yield GenerationMode.VANILLA;
+                // Fail loudly - getDefaultWorldGenerator should have caught this already.
+                // Reaching here means a stale/orphaned id slipped through.
+                throw new IllegalArgumentException(
+                    "Unknown Firma generation mode or pack id: '" + modeId + "'. " +
+                    "World creation aborted."
+                );
             }
         };
     }
