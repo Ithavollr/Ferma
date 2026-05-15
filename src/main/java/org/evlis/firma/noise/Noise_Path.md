@@ -9,7 +9,7 @@ All file paths are absolute; line numbers reflect current state at time of writi
 
 - **Un-wired `DensityFunction`**: the form as decoded from data / held by `NoiseGeneratorSettings`. Its leaves are `Holder<NormalNoise.NoiseParameters>` references and `HolderHolder` wrappers — i.e. *recipes* describing which noise parameter file to use, with no actual `NormalNoise` sampler instance attached. Calling `compute()` on this form returns garbage (un-resolved holders) or throws.
 - **Wired `DensityFunction`**: the same tree after `mapAll(new NoiseWiringHelper())` (run inside `RandomState`'s constructor). Each leaf has been resolved against the registry and instantiated as a real seeded `NormalNoise` (via the world's `PositionalRandomFactory`). This is the form that actually produces numbers when sampled. Interior nodes may also get wrapped in marker/cache types.
-- **Codec**: a Mojang DataFixerUpper serializer/deserializer (`com.mojang.serialization.Codec` / `KeyDispatchDataCodec`). Every vanilla `DensityFunction` declares one so it can round-trip through `level.dat` and worldgen JSON. **Our custom climate functions return `MapCodec.unit(...)` which encodes as `{}`** — fine as long as the value is never asked to serialize. The moment one ends up inside something Mojang re-encodes (e.g. `NoiseBasedChunkGenerator.settings` getting saved), `level.dat` corrupts.
+- **Codec**: a Mojang DataFixerUpper serializer/deserializer (`com.mojang.serialization.Codec` / `KeyDispatchDataCodec`). Every vanilla `DensityFunction` declares one so it can round-trip through `level.dat` and worldgen JSON. Our custom climate functions are **never** intended to serialize — they declare an `UnserializableMapCodec` that **errors on encode** so any regression triggers a loud failure instead of silently writing `{}` and corrupting `level.dat`. See §3.1.
 - **Wrapping** (in this doc): one `DensityFunction` holding another and forwarding calls to it (e.g. `FirmaClimateFunction.Identity` wraps a vanilla function). Wrapping has cost: every `compute(FunctionContext)` typically allocates a `SinglePointContext` per call, which is brutal on hot paths like `finalDensity` (called millions of times per chunk). We avoid wrapping anything we don't actively transform.
 
 ---
@@ -132,6 +132,30 @@ Wraps a vanilla `ChunkGenerator`. Each override checks `voidMode`:
 | NMS noise (PACK mode) | `RandomState.router` | Reflection (`final` field set) | Replace climate density functions with pack-defined ones; safe because router is rebuilt at startup. |
 | NMS climate sampler | `RandomState.sampler` | Reflection (`final` field set) | `Climate.Sampler` is captured independently in `RandomState`'s constructor; must be rebuilt from the patched router for `MultiNoiseBiomeSource` to honor pack climate. |
 | NMS settings holder | `NoiseBasedChunkGenerator.settings` | **Intentionally never touched** | Mutating it corrupts `level.dat` via codec round-trip. |
+
+### 3.1 Defending against `level.dat` corruption
+
+The corruption hazard: if any of our custom `DensityFunction`s ever ends up inside a Mojang codec encode path (the canonical example: replacing `NoiseBasedChunkGenerator.settings` with `Holder.direct(newSettings)` so the saved `level.dat` tries to inline the noise router), Mojang's `resultOrPartial(...)` salvage logic would happily write `{}` for our nodes. The next world load then dies with `"No key dimensions in MapLike[{}]"` and the world is unrecoverable.
+
+We close this hazard with three layers:
+
+1. **No mutation of saved fields.** `NoiseBasedChunkGenerator.settings` is never touched. All Firma noise patches go into `RandomState` (transient — rebuilt every server start from the unchanged `settings`). This is the primary defense.
+2. **Fail-loud codecs.** Every Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `DepthClimateFunction`) declares its `codec()` via `UnserializableMapCodec.of(name, recoveryDefault)`. That codec returns `DataResult.error(...)` on **encode**, so any future regression that re-introduces a serialization path errors out at the first attempted write. The error propagates through Mojang's `RecordBuilder` and `resultOrPartial(...)` cannot salvage it into `{}` — the save aborts loudly with a stack trace naming the offending Firma class. `level.dat` is left untouched.
+3. **Permissive decode.** The same codec returns a safe sentinel (e.g. `Constant(0.0)`) on decode. This is purely a recovery affordance: if a `level.dat` from a buggy past version somehow contains our nodes, the world still loads. Decode is never expected to fire in normal operation since these classes are never registered in `BuiltInRegistries.DENSITY_FUNCTION_TYPE`.
+
+Together, layers (1) + (2) make silent corruption unreachable: either we never serialize (layer 1), or we error out before producing partial output (layer 2). Layer (3) is the parachute.
+
+#### Regression tests
+
+`./gradlew test` runs three guards that fail the build if any layer above is broken:
+
+- `UnserializableMapCodecTest` (pure DFU): asserts `UnserializableMapCodec.of(...)` errors on encode and recovers on decode.
+- `FirmaDensityFunctionCodecGuardTest` (real NMS classes, no mocking): instantiates each Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `DepthClimateFunction`) and asserts `df.codec().codec().codec().encodeStart(JsonOps.INSTANCE, df).isError()`. If anyone replaces the failing codec with `MapCodec.unit(...)`, this test breaks.
+- `NMSInjectListenerSafetyTest` (source-level static analysis): scans `NMSInjectListener.java` for the historical corruption patterns:
+  - reflective access to `NoiseBasedChunkGenerator.class.getDeclaredField("settings")`
+  - `Holder.direct(...)` paired with `NoiseGeneratorSettings`
+  - direct assignment to a generator's `settings` field
+  - also asserts router patching is still present (positive sanity check).
 
 ---
 

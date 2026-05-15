@@ -23,6 +23,10 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
     paperweight.paperDevBundle("1.21.4-R0.1-SNAPSHOT")
     implementation("xyz.jpenilla:reflection-remapper:0.1.2")
+
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -47,7 +51,16 @@ tasks {
         archiveFileName.set("Firma-${project.version}.jar")
     }
 
+    test {
+        useJUnitPlatform()
+        testLogging {
+            events("passed", "skipped", "failed")
+            showStandardStreams = false
+        }
+    }
+
     build {
+        dependsOn(test)
         dependsOn(shadowJar)
     }
 

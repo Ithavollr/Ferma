@@ -1,6 +1,5 @@
 package org.evlis.firma.noise;
 
-import com.mojang.serialization.MapCodec;
 import net.minecraft.util.KeyDispatchDataCodec;
 import net.minecraft.world.level.levelgen.DensityFunction;
 
@@ -94,6 +93,7 @@ public class DoublePerlinClimateFunction implements FirmaClimateFunction {
     
     @Override
     public KeyDispatchDataCodec<? extends DensityFunction> codec() {
-        return KeyDispatchDataCodec.of(MapCodec.unit(this));
+        return KeyDispatchDataCodec.of(
+            UnserializableMapCodec.of("DoublePerlinClimateFunction", this));
     }
 }
