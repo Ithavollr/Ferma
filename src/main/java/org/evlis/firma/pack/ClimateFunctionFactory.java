@@ -5,6 +5,7 @@ import org.evlis.firma.noise.DepthClimateFunction;
 import org.evlis.firma.noise.DoublePerlinClimateFunction;
 import org.evlis.firma.noise.FirmaClimateFunction;
 import org.evlis.firma.noise.PositionalRandomFactory;
+import org.evlis.firma.noise.RadialGradientClimateFunction;
 
 /**
  * Factory for building FirmaClimateFunction instances from ClimateFunctionConfig.
@@ -42,6 +43,7 @@ public class ClimateFunctionFactory {
             case ClimateFunctionConfig.ShiftedNoise s -> buildShiftedNoise(s, factory, vanilla);
             case ClimateFunctionConfig.WeirdnessToRidges w -> buildWeirdnessToRidges(w, factory, vanilla);
             case ClimateFunctionConfig.YClampedGradient y -> buildYClampedGradient(y, factory, vanilla);
+            case ClimateFunctionConfig.RadialGradient g -> buildRadialGradient(g);
         };
     }
     
@@ -131,6 +133,19 @@ public class ClimateFunctionFactory {
         return new FirmaClimateFunction.WeirdnessToRidges(new FirmaClimateFunction.Identity(source));
     }
     
+    private DensityFunction buildRadialGradient(ClimateFunctionConfig.RadialGradient config) {
+        // Bidirectional radial gradient: startValue + rate * dist, clamped.
+        // Supports falloff, fall-up, plateau-then-drop, and bullseye bands.
+        return new RadialGradientClimateFunction(
+            config.centerX(),
+            config.centerZ(),
+            config.startValue(),
+            config.rate(),
+            config.clampMin(),
+            config.clampMax()
+        );
+    }
+
     private DensityFunction buildYClampedGradient(
             ClimateFunctionConfig.YClampedGradient config,
             PositionalRandomFactory factory,

@@ -187,6 +187,18 @@ public class PackLoader {
                 int maxY = ((Number) config.getOrDefault("max_y", 320)).intValue();
                 yield new ClimateFunctionConfig.YClampedGradient(minY, maxY);
             }
+            case "radial_gradient" -> {
+                // Bidirectional radial function: startValue + rate * distance, clamped.
+                // See RadialGradientClimateFunction for detailed examples (falloff, fall-up, plateau, bullseye).
+                double centerX   = ((Number) config.getOrDefault("center_x",   0.0)).doubleValue();
+                double centerZ   = ((Number) config.getOrDefault("center_z",   0.0)).doubleValue();
+                double startValue = ((Number) config.getOrDefault("start_value", 0.0)).doubleValue();
+                double rate      = ((Number) config.getOrDefault("rate",       0.0)).doubleValue();
+                // Use extreme defaults so clamping is opt-in; users can set clamp_min/max to -1/1 etc.
+                double clampMin  = ((Number) config.getOrDefault("clamp_min", Double.NEGATIVE_INFINITY)).doubleValue();
+                double clampMax  = ((Number) config.getOrDefault("clamp_max", Double.POSITIVE_INFINITY)).doubleValue();
+                yield new ClimateFunctionConfig.RadialGradient(centerX, centerZ, startValue, rate, clampMin, clampMax);
+            }
             default -> throw new IllegalArgumentException("Unknown climate type: " + type);
         };
     }
@@ -229,7 +241,7 @@ public class PackLoader {
      * Extract default packs from jar resources to the packs directory.
      */
     private void extractDefaultPacks(File packsDir) {
-        String[] defaultPacks = {"passthrough", "frozen_world", "fully_frozen", "custom_noise"};
+        String[] defaultPacks = {"passthrough", "frozen_world", "fully_frozen", "custom_noise", "high_mountain"};
         
         for (String packId : defaultPacks) {
             try {

@@ -79,4 +79,25 @@ public sealed interface ClimateFunctionConfig {
         @Override
         public String type() { return "y_clamped_gradient"; }
     }
+
+    /**
+     * Radial gradient — returns {@code startValue} at the center and changes by
+     * {@code rate} per block of XZ distance (signed). Result is clamped to
+     * {@code [clampMin, clampMax]}.
+     *
+     * <p>Expresses falloff, fall-up, plateau-then-drop, and bullseye bands
+     * via the same five parameters. See {@code RadialGradientClimateFunction}
+     * for detailed usage examples (high_mountain, frozen core, etc.).
+     */
+    record RadialGradient(
+        double centerX,
+        double centerZ,
+        double startValue,
+        double rate,
+        double clampMin,
+        double clampMax
+    ) implements ClimateFunctionConfig {
+        @Override
+        public String type() { return "radial_gradient"; }
+    }
 }

@@ -80,6 +80,15 @@ class FirmaDensityFunctionCodecGuardTest {
         assertCodecErrorsOnEncode(df);
     }
 
+    @Test
+    void radialGradient_codecErrorsOnEncode() {
+        // Bidirectional radial gradient: start 1.0 at center, fall -0.0002 per block, clamp at -1.05
+        RadialGradientClimateFunction df = new RadialGradientClimateFunction(
+            0.0, 0.0, 1.0, -0.0002, -1.05, 1.0
+        );
+        assertCodecErrorsOnEncode(df);
+    }
+
     /**
      * Drives the actual encode check: get the {@link MapCodec} from the function's
      * {@code KeyDispatchDataCodec}, convert to a regular {@link Codec}, and assert

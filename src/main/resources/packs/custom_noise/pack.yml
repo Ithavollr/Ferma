@@ -1,5 +1,13 @@
 # Custom Noise Pack Example
 # Demonstrates using DoublePerlin noise for custom climate generation
+#  Parameter    	Min Value	Max Value
+#  Temperature      -1.25	    1.25
+#  Vegetation       -1.422	    1.422
+#  Continentalness  -4.622	    4.622
+#  Erosion          -4.0	    4.0
+#  Weirdness        -3.111	    3.111
+#  Depth            -1.5	    1.5
+
 
 id: custom_noise
 name: "Custom Noise"
