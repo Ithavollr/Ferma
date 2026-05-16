@@ -88,13 +88,15 @@ Steps:
 #### `PACK` mode (the interesting case)
 - Read `randomState = serverWorld.getChunkSource().randomState()`.
 - Take the **wired** router via `randomState.router()` (NOT `settings.noiseRouter()` — that one is un-wired and would yield broken aquifer/fluid noise → "world full of water" bug).
-- Build a new `NoiseRouter` via `FirmaNoiseRouter.patchClimateFunctions(wiredRouter, seed, pack)`:
+- Build a new `NoiseRouter` via `FirmaNoiseRouter.patchClimateFunctions(wiredRouter, randomState, seed, pack)`:
   - For each of the 5 configurable climate parameters (`temperature`, `humidity` (vanilla `vegetation`), `continentalness` (`continents`), `erosion`, `weirdness` (`ridges`)):
     - If `pack.hasClimateConfig(param)` → `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / etc.).
     - Otherwise → pass through the **wired vanilla function** unchanged (no wrapper, no `Identity` — avoids per-call `SinglePointContext` allocation).
-  - `depth` is **always** vanilla pass-through — it's a derived function (`yClampedGradient + offset spline`) and is not independently configurable.
-  - All non-climate fields (`barrierNoise`, `fluidLevelFloodednessNoise`, `fluidLevelSpreadNoise`, `lavaNoise`, `initialDensityWithoutJaggedness`, `finalDensity`, `veinToggle`, `veinRidged`, `veinGap`) are passed through wired vanilla unchanged.
-- Important consequence discovered from the `ocean` pack test: replacing `NoiseRouter.continents()` changes the exposed router field and the rebuilt biome sampler, but does **not** automatically rewrite vanilla's already-wired terrain density graph. Vanilla terrain shape is not computed by dynamically asking `router.continents()` at runtime. It is computed by nested density functions inside `depth`, `initialDensityWithoutJaggedness`, and `finalDensity`, and those nested functions were wired before Firma replaced the top-level router fields.
+  - **Terrain-shape fields are rebuilt** from patched climate functions (see §2.4):
+    - `depth` = `yClampedGradient(-64, 320, 1.5, -1.5) + rebuiltOffset` (derived, not pack-configurable)
+    - `initialDensityWithoutJaggedness` = `slideOverworld(amplified, add(noiseGradientDensity(cache2d(rebuiltFactor), rebuiltDepth), constant(-0.703125)).clamp(-64, 64))`
+    - `finalDensity` = `postProcess(slideOverworld(amplified, rebuiltSlopedCheese))` where `slopedCheese = noiseGradientDensity(rebuiltFactor, rebuiltDepth + rebuiltJaggedness * jaggedNoise) + BASE_3D_NOISE`
+  - Independent fields (`barrierNoise`, `fluidLevelFloodednessNoise`, `fluidLevelSpreadNoise`, `lavaNoise`, `veinToggle`, `veinRidged`, `veinGap`) are passed through wired vanilla unchanged.
 - **Hack**: reflectively set `RandomState.router` (a `final` field) to the patched router.
   - We deliberately do **not** touch `NoiseBasedChunkGenerator.settings`: replacing it with a `Holder.direct(...)` would round-trip through the codec on save and our custom `DensityFunction`s encode as `{}`, corrupting `level.dat` (`"No key dimensions in MapLike[{}]"` on reload).
   - `RandomState.router` is transient (rebuilt every server start from `settings`), so this hack is save-safe.
@@ -165,50 +167,100 @@ slopedCheese = noiseGradientDensity(factor, depth + jaggedness * jaggedNoise);
 finalDensity = ... slopedCheese ... caves ... aquifers ...;
 ```
 
-Current Firma state after depth removal:
+Current Firma state (terrain rebuild implementation):
 
-- `FirmaNoiseRouter.patchClimateFunctions(...)` always passes through `vanillaRouter.depth()`.
-- `depth` is no longer a pack-configurable parameter because vanilla depth is a derived terrain-shape function, not an independent climate input.
-- `initialDensityWithoutJaggedness` and `finalDensity` are still passed through from the wired vanilla router and remain the terrain-shape mismatch to fix.
+- ✅ **Steps 1-3 complete**: `offset`, `factor`, `jaggedness`, and `depth` are rebuilt from patched climate functions using vanilla's spline logic.
+- ✅ **Step 4 complete**: `initialDensityWithoutJaggedness` is rebuilt as `slideOverworld(amplified, add(noiseGradientDensity(cache2d(factor), depth), constant(-0.703125)).clamp(-64, 64))`.
+- ⚠️ **Step 5 partial**: `finalDensity` rebuilds `slopedCheese` from patched terrain inputs using `RandomState` to access seeded `jaggedNoise` and `BASE_3D_NOISE_OVERWORLD`, then applies `slideOverworld` and `postProcess`.
+- ✅ **Step 6 complete**: Only transient `RandomState.router` and `RandomState.sampler` are patched; `NoiseBasedChunkGenerator.settings` remains untouched.
+- ✅ **Step 7 complete**: No `FirmaClimateFunction.Identity` wrappers in rebuilt terrain paths; direct `DensityFunction` composition.
+- `depth` is no longer pack-configurable; it's always derived as `yClampedGradient + rebuiltOffset`.
+- `PackLoader` validates climate parameter names and rejects unknown keys like `depth`.
 
-Observed symptom:
+### Current simplification and remaining work
 
-- A water-world pack with only:
-  ```yaml
-  climate:
-    continentalness:
-      type: constant
-      value: -1.01
-  ```
-  can still generate normal land/hills/plains-shaped terrain with water features (e.g. icebergs) because biome lookup sees Firma's patched continentalness, while block density still comes from vanilla-wired terrain functions.
+**What works now:**
+- Terrain shape (hills, valleys, plains, oceans) correctly responds to patched `continentalness`, `erosion`, and `weirdness`.
+- Ocean packs with constant `-1.01` continentalness should generate flat, low-elevation ocean floor terrain.
+- Biome placement and terrain density are now consistent.
 
-### Terrain rebuild TODO
+**Current simplification in `finalDensity`:**
+- Rebuilds core terrain (`slopedCheese`) using patched inputs and applies slide/postProcess.
+- **Missing**: Full vanilla cave/aquifer/noodle pipeline integration.
 
-1. **Rebuild shared terrain inputs**: Create Firma-compatible equivalents of vanilla `offset`, `factor`, `jaggedness`, and `depth` using the patched top-level `continentalness`, `erosion`, and `weirdness/ridges` functions.
-2. **Preserve vanilla transforms**: Use vanilla's spline logic from `TerrainProvider.overworldOffset(...)`, `TerrainProvider.overworldFactor(...)`, and `TerrainProvider.overworldJaggedness(...)`; do not replace depth with direct continentalness addition.
-3. **Keep depth derived**: Compute rebuilt depth as `yClampedGradient(-64, 320, 1.5, -1.5) + rebuiltOffset`, matching vanilla's relationship between vertical gradient and terrain offset.
-4. **Patch `initialDensityWithoutJaggedness`**: Replace the router field with a rebuilt function derived from rebuilt `factor` and rebuilt `depth`, so preliminary density/debug consumers see the same patched terrain shape as final block generation.
-5. **Patch `finalDensity`**: Replace the router field with a rebuilt function whose `sloped_cheese` branch uses rebuilt `factor`, rebuilt `depth`, and rebuilt `jaggedness`, while preserving the rest of vanilla's cave, aquifer, slide, noodle, and post-processing behavior.
-6. **Avoid `settings` mutation**: Continue patching only transient `RandomState.router` and `RandomState.sampler`; do not replace `NoiseBasedChunkGenerator.settings` or introduce custom functions into a codec save path.
-7. **Minimize hot-path wrappers**: Avoid `FirmaClimateFunction.Identity` wrappers in rebuilt hot terrain paths unless unavoidable; `finalDensity` is sampled heavily.
-8. **Audit aquifer consistency**: Vanilla `Aquifer` reads `noiseRouter.erosion()` and `noiseRouter.depth()` directly in addition to aquifer noise fields. Decide whether rebuilt depth should replace the router's top-level `depth` field once terrain functions are rebuilt, so aquifer logic and terrain density see the same derived depth.
+**Remaining work: noise cave integration**
+
+Vanilla's `finalDensity` pipeline includes noise caves (spaghetti, cheese, noodle, entrances, pillars) that are independent of climate inputs but must be composed with our rebuilt `slopedCheese`. Current simplification skips these, producing solid terrain.
+
+**Cave function dependencies:**
+
+| Function | Vanilla source | Climate-dependent? | Needs rebuilding? |
+|---|---|---:|---|
+| `ENTRANCES` | `NoiseRouterData.entrances(...)` | No | No - can use vanilla's wired function |
+| `NOODLE` | `NoiseRouterData.noodle(...)` | No | No - can use vanilla's wired function |
+| `SPAGHETTI_2D` | `NoiseRouterData.spaghetti2D(...)` | No | No - can use vanilla's wired function |
+| `SPAGHETTI_ROUGHNESS` | `NoiseRouterData.spaghettiRoughnessFunction(...)` | No | No - can use vanilla's wired function |
+| `PILLARS` | `NoiseRouterData.pillars(...)` | No | No - can use vanilla's wired function |
+| `underground(...)` | `NoiseRouterData.underground(...)` | **Yes - takes `slopedCheese` as parameter** | **Yes - must rebuild with our `slopedCheese`** |
+
+**Problem:** Vanilla's cave functions are **not exposed** in `NoiseRouter` - they're internal to the wired `finalDensity` tree. We have three options:
+
+**Option A: Extract from vanilla's wired router**
+- Traverse `vanillaRouter.finalDensity()` tree to find the cave function nodes
+- Pro: Uses vanilla's exact seeded instances
+- Con: Requires complex tree traversal; fragile if vanilla changes structure
+
+**Option B: Rebuild from noise parameters**
+- Access `RandomState.noises` (private `HolderGetter<NormalNoise.NoiseParameters>`) via reflection
+- Call `noisesGetter.getOrThrow(Noises.CAVE_ENTRANCE)`, etc. to get holders
+- Reconstruct each cave function following vanilla's exact logic from `NoiseRouterData`
+- Pro: Explicit, maintainable, matches vanilla's construction exactly
+- Con: Requires implementing 5+ helper functions; more code
+
+**Option C: Use vanilla's `finalDensity` as-is (current approach)**
+- Skip cave integration entirely; rely on datapack to disable legacy carvers
+- Pro: Simplest; terrain shape works correctly
+- Con: No underground features (no caves, no aquifers below y=0)
+
+**Decision needed:** Which option to implement?
+
+**If Option B (recommended):**
+- Already have reflection access to `RandomState.noises` (used for `jaggedNoise`)
+- Need to implement:
+  1. `rebuildEntrances(RandomState, noisesGetter)` - spaghetti 3D caves
+  2. `rebuildNoodle(RandomState, noisesGetter)` - noodle caves
+  3. `rebuildSpaghetti2D(noisesGetter)` - 2D spaghetti caves
+  4. `rebuildSpaghettiRoughness(noisesGetter)` - roughness modifier
+  5. `rebuildPillars(noisesGetter)` - pillar caves
+  6. `rebuildUnderground(slopedCheese, ...)` - compose cheese + spaghetti + pillars
+- Then compose: `rangeChoice(slopedCheese, -1000000, 1.5625, min(slopedCheese, mul(5.0, entrances)), underground)` → `slideOverworld` → `postProcess` → `min(..., noodle)`
+
+**Additional considerations:**
+- **Aquifer consistency**: Vanilla `Aquifer` reads `noiseRouter.erosion()` and `noiseRouter.depth()` directly. Our rebuilt `depth` is now in the router, so aquifers should see consistent values.
+- **Legacy carvers**: User will disable via datapack (separate from noise caves).
+- **Y-limited interpolation**: Some cave functions use `yLimitedInterpolatable` which requires access to the `Y` density function from the registry.
 
 ### Pass-through audit
 
 `FirmaNoiseRouter.patchClimateFunctions(...)` currently passes these vanilla router fields through unchanged:
 
-| Pass-through field | Vanilla role | Depends on patched climate inputs? | Discrepancy risk |
+| Pass-through field | Vanilla role | Depends on patched climate inputs? | Status |
 |---|---|---:|---|
-| `barrierNoise` | Aquifer barrier noise from `Noises.AQUIFER_BARRIER` | No direct dependency found | Low; independent aquifer noise parameter. |
-| `fluidLevelFloodednessNoise` | Aquifer fluid-level floodedness from `Noises.AQUIFER_FLUID_LEVEL_FLOODEDNESS` | No direct dependency found | Low; independent aquifer noise parameter. |
-| `fluidLevelSpreadNoise` | Aquifer fluid-level spread from `Noises.AQUIFER_FLUID_LEVEL_SPREAD` | No direct dependency found | Low; independent aquifer noise parameter. |
-| `lavaNoise` | Aquifer lava selector from `Noises.AQUIFER_LAVA` | No direct dependency found | Low; independent aquifer noise parameter. |
-| `depth` | Derived terrain depth (`yClampedGradient + offset`) | Yes: stale `offset` derives from vanilla `continentalness`, `erosion`, and `ridges` | High for aquifer consistency; no longer pack-configurable, but likely needs rebuilding as a derived field. |
-| `initialDensityWithoutJaggedness` | Terrain preliminary density/debug value; uses `overworld/depth` and `overworld/factor` | Yes: stale `depth`/`factor` derive from vanilla `continentalness`, `erosion`, and `ridges` | High; must be kept consistent with patched climate terrain inputs. |
-| `finalDensity` | Main block density used by `NoiseChunk`; includes `sloped_cheese`, cave functions, slide/postprocess, noodle | Yes: stale `sloped_cheese` derives from vanilla `depth`, `factor`, and `jaggedness` | High; this is the main source of stale landmass shape. |
-| `veinToggle` | Ore vein vertical/noise selector using `Noises.ORE_VEININESS` | No direct climate dependency found | Low for terrain/climate; independent ore-vein path. |
-| `veinRidged` | Ore vein ridge strength using `Noises.ORE_VEIN_A/B` and Y range | No direct climate dependency found | Low for terrain/climate; independent ore-vein path. |
-| `veinGap` | Ore vein gap noise using `Noises.ORE_GAP` | No direct climate dependency found | Low for terrain/climate; independent ore-vein path. |
+| `barrierNoise` | Aquifer barrier noise from `Noises.AQUIFER_BARRIER` | No | ✅ Pass-through safe; independent aquifer noise. |
+| `fluidLevelFloodednessNoise` | Aquifer fluid-level floodedness from `Noises.AQUIFER_FLUID_LEVEL_FLOODEDNESS` | No | ✅ Pass-through safe; independent aquifer noise. |
+| `fluidLevelSpreadNoise` | Aquifer fluid-level spread from `Noises.AQUIFER_FLUID_LEVEL_SPREAD` | No | ✅ Pass-through safe; independent aquifer noise. |
+| `lavaNoise` | Aquifer lava selector from `Noises.AQUIFER_LAVA` | No | ✅ Pass-through safe; independent aquifer noise. |
+| `veinToggle` | Ore vein vertical/noise selector using `Noises.ORE_VEININESS` | No | ✅ Pass-through safe; independent ore-vein path. |
+| `veinRidged` | Ore vein ridge strength using `Noises.ORE_VEIN_A/B` and Y range | No | ✅ Pass-through safe; independent ore-vein path. |
+| `veinGap` | Ore vein gap noise using `Noises.ORE_GAP` | No | ✅ Pass-through safe; independent ore-vein path. |
+
+**Rebuilt fields (no longer pass-through):**
+
+| Rebuilt field | Implementation | Status |
+|---|---|---|
+| `depth` | `yClampedGradient(-64, 320, 1.5, -1.5) + rebuiltOffset` | ✅ Rebuilt from patched climate; derived, not configurable. |
+| `initialDensityWithoutJaggedness` | `slideOverworld(amplified, add(noiseGradientDensity(cache2d(rebuiltFactor), rebuiltDepth), constant(-0.703125)).clamp(-64, 64))` | ✅ Rebuilt from patched terrain inputs. |
+| `finalDensity` | `postProcess(slideOverworld(amplified, rebuiltSlopedCheese))` where `slopedCheese = noiseGradientDensity(rebuiltFactor, rebuiltDepth + rebuiltJaggedness * jaggedNoise) + BASE_3D_NOISE` | ⚠️ Partial; missing cave/noodle integration (see remaining TODO above). |
 
 ---
 
@@ -229,7 +281,7 @@ The corruption hazard: if any of our custom `DensityFunction`s ever ends up insi
 We close this hazard with three layers:
 
 1. **No mutation of saved fields.** `NoiseBasedChunkGenerator.settings` is never touched. All Firma noise patches go into `RandomState` (transient — rebuilt every server start from the unchanged `settings`). This is the primary defense.
-2. **Fail-loud codecs.** Every Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `DepthClimateFunction`) declares its `codec()` via `UnserializableMapCodec.of(name, recoveryDefault)`. That codec returns `DataResult.error(...)` on **encode**, so any future regression that re-introduces a serialization path errors out at the first attempted write. The error propagates through Mojang's `RecordBuilder` and `resultOrPartial(...)` cannot salvage it into `{}` — the save aborts loudly with a stack trace naming the offending Firma class. `level.dat` is left untouched.
+2. **Fail-loud codecs.** Every Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `PeaksAndValleysFunction`) declares its `codec()` via `UnserializableMapCodec.of(name, recoveryDefault)`. That codec returns `DataResult.error(...)` on **encode**, so any future regression that re-introduces a serialization path errors out at the first attempted write. The error propagates through Mojang's `RecordBuilder` and `resultOrPartial(...)` cannot salvage it into `{}` — the save aborts loudly with a stack trace naming the offending Firma class. `level.dat` is left untouched.
 3. **Permissive decode.** The same codec returns a safe sentinel (e.g. `Constant(0.0)`) on decode. This is purely a recovery affordance: if a `level.dat` from a buggy past version somehow contains our nodes, the world still loads. Decode is never expected to fire in normal operation since these classes are never registered in `BuiltInRegistries.DENSITY_FUNCTION_TYPE`.
 
 Together, layers (1) + (2) make silent corruption unreachable: either we never serialize (layer 1), or we error out before producing partial output (layer 2). Layer (3) is the parachute.
@@ -239,7 +291,7 @@ Together, layers (1) + (2) make silent corruption unreachable: either we never s
 `./gradlew test` runs three guards that fail the build if any layer above is broken:
 
 - `UnserializableMapCodecTest` (pure DFU): asserts `UnserializableMapCodec.of(...)` errors on encode and recovers on decode.
-- `FirmaDensityFunctionCodecGuardTest` (real NMS classes, no mocking): instantiates each Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `DepthClimateFunction`) and asserts `df.codec().codec().codec().encodeStart(JsonOps.INSTANCE, df).isError()`. If anyone replaces the failing codec with `MapCodec.unit(...)`, this test breaks.
+- `FirmaDensityFunctionCodecGuardTest` (real NMS classes, no mocking): instantiates each Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `PeaksAndValleysFunction`) and asserts `df.codec().codec().codec().encodeStart(JsonOps.INSTANCE, df).isError()`. If anyone replaces the failing codec with `MapCodec.unit(...)`, this test breaks.
 - `NMSInjectListenerSafetyTest` (source-level static analysis): scans `NMSInjectListener.java` for the historical corruption patterns:
   - reflective access to `NoiseBasedChunkGenerator.class.getDeclaredField("settings")`
   - `Holder.direct(...)` paired with `NoiseGeneratorSettings`
@@ -286,20 +338,3 @@ A single `long` seed is the root of every deterministic noise decision. Its path
 - **Concurrent world init**: `injectedWorlds` is a `ConcurrentHashMap.newKeySet()`; first call wins, repeats are no-ops.
 
 ---
-
-## 6. Requirements to fix the terrain-density mismatch
-
-- **Preserve save safety**: any fix must keep custom Firma `DensityFunction`s out of `NoiseBasedChunkGenerator.settings` and out of any normal `level.dat` codec encode path.
-- **Patch biome and terrain consistently**: pack-configured climate parameters must affect both `RandomState.sampler` biome lookup and the terrain density graph used by chunk block generation.
-- **Account for vanilla terrain dependencies**: overriding `continentalness`, `erosion`, or `weirdness/ridges` must also update the dependent terrain functions that vanilla derives from them: `offset`, `factor`, `jaggedness`, `depth`, `sloped_cheese`, `initialDensityWithoutJaggedness`, and `finalDensity`.
-- **Classify pass-through fields by dependency**: retain independent vanilla pass-throughs (`barrierNoise`, `fluidLevelFloodednessNoise`, `fluidLevelSpreadNoise`, `lavaNoise`, `veinToggle`, `veinRidged`, `veinGap`) only after verifying they do not capture patched climate inputs.
-- **Reconcile aquifer inputs**: ensure aquifer-visible `erosion` and `depth` are consistent with the same patched climate-derived terrain graph used by `finalDensity`.
-- **Reconcile direct `depth` overrides**: if a pack explicitly overrides `depth`, define whether that depth also drives terrain `initialDensityWithoutJaggedness`/`finalDensity`, aquifer depth, biome sampler depth, or all of them; avoid having separate stale depth meanings.
-- **Reconcile `weirdness/ridges` derivatives**: overriding `weirdness` must update any terrain use of raw ridges and folded ridges, including `RIDGES_FOLDED`/`peaksAndValleys` paths feeding `offset`, `factor`, and `jaggedness`.
-- **Preserve vanilla pass-through behavior**: unspecified pack climate parameters must continue to use wired vanilla functions with their original world-seed behavior.
-- **Preserve vanilla terrain math**: the updated terrain graph must use the same vanilla spline relationships from `TerrainProvider.overworldOffset`, `TerrainProvider.overworldFactor`, and `TerrainProvider.overworldJaggedness`.
-- **Handle dependency order explicitly**: terrain-derived functions must be built from the final patched versions of their inputs, not from stale vanilla holders.
-- **Avoid hot-path wrapper regressions**: any replacement terrain density functions must avoid unnecessary `SinglePointContext` allocation or other per-sample overhead in `finalDensity`.
-- **Keep `Climate.Sampler` rebuild mandatory**: fixing terrain does not remove the need to rebuild `RandomState.sampler`; biome lookup still captures functions independently.
-- **Add verification coverage**: tests or diagnostics must prove that a constant continentalness pack affects both biome climate samples and the terrain density/final-density path.
-- **Document expected outcomes**: the water-world case (`continentalness = -1.01`) should be recorded as a regression scenario: terrain should no longer produce vanilla landmass shapes when continentalness is pinned to deep-ocean values.

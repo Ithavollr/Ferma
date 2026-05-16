@@ -93,7 +93,7 @@ public class NMSInjectListener implements Listener {
                         
                         // Patch the climate functions using the pack
                         NoiseRouter patchedRouter = FirmaNoiseRouter.patchClimateFunctions(
-                            wiredRouter, serverWorld.getSeed(), pack
+                            wiredRouter, randomState, serverWorld.getSeed(), pack
                         );
                         
                         java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");
