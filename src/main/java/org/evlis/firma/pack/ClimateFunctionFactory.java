@@ -1,7 +1,6 @@
 package org.evlis.firma.pack;
 
 import net.minecraft.world.level.levelgen.DensityFunction;
-import org.evlis.firma.noise.DepthClimateFunction;
 import org.evlis.firma.noise.DoublePerlinClimateFunction;
 import org.evlis.firma.noise.FirmaClimateFunction;
 import org.evlis.firma.noise.PositionalRandomFactory;
@@ -42,7 +41,6 @@ public class ClimateFunctionFactory {
             case ClimateFunctionConfig.DoublePerlin d -> buildDoublePerlin(d, factory);
             case ClimateFunctionConfig.ShiftedNoise s -> buildShiftedNoise(s, factory, vanilla);
             case ClimateFunctionConfig.WeirdnessToRidges w -> buildWeirdnessToRidges(w, factory, vanilla);
-            case ClimateFunctionConfig.YClampedGradient y -> buildYClampedGradient(y, factory, vanilla);
             case ClimateFunctionConfig.RadialGradient g -> buildRadialGradient(g);
         };
     }
@@ -143,26 +141,6 @@ public class ClimateFunctionFactory {
             config.rate(),
             config.clampMin(),
             config.clampMax()
-        );
-    }
-
-    private DensityFunction buildYClampedGradient(
-            ClimateFunctionConfig.YClampedGradient config,
-            PositionalRandomFactory factory,
-            DensityFunction vanilla) {
-        
-        // For depth, we need continentalness - get it from vanilla or use a default
-        // This is a bit tricky since we don't have continentalness yet at this point
-        // For now, use a simplified version that doesn't depend on continentalness
-        // or use identity for depth if not specified
-        
-        // Use continentalness from vanilla router - this will be resolved at runtime
-        return new DepthClimateFunction(
-            new FirmaClimateFunction.Identity(vanilla), // continentalness placeholder
-            config.minY(),
-            config.maxY(),
-            1.5,  // fromValue at minY
-            -1.5  // toValue at maxY
         );
     }
 }

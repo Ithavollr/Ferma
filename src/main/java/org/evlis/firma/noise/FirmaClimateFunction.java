@@ -82,7 +82,7 @@ public interface FirmaClimateFunction extends DensityFunction {
         private final double value;
         
         public Constant(double value) {
-            this.value = Math.max(-1.0, Math.min(1.0, value)); // Clamp to climate range
+            this.value = value;
         }
         
         @Override

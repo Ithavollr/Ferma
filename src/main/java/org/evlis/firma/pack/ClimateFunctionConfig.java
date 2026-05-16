@@ -71,14 +71,6 @@ public sealed interface ClimateFunctionConfig {
         @Override
         public String type() { return "weirdness_to_ridges"; }
     }
-    
-    /**
-     * Y-clamped gradient for depth parameter.
-     */
-    record YClampedGradient(int minY, int maxY) implements ClimateFunctionConfig {
-        @Override
-        public String type() { return "y_clamped_gradient"; }
-    }
 
     /**
      * Radial gradient — returns {@code startValue} at the center and changes by

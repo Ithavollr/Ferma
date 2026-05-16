@@ -89,10 +89,12 @@ Steps:
 - Read `randomState = serverWorld.getChunkSource().randomState()`.
 - Take the **wired** router via `randomState.router()` (NOT `settings.noiseRouter()` — that one is un-wired and would yield broken aquifer/fluid noise → "world full of water" bug).
 - Build a new `NoiseRouter` via `FirmaNoiseRouter.patchClimateFunctions(wiredRouter, seed, pack)`:
-  - For each of the 6 climate parameters (`temperature`, `humidity` (vanilla `vegetation`), `continentalness` (`continents`), `erosion`, `weirdness` (`ridges`), `depth`):
-    - If `pack.hasClimateConfig(param)` → `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / DepthClimateFunction / etc.).
+  - For each of the 5 configurable climate parameters (`temperature`, `humidity` (vanilla `vegetation`), `continentalness` (`continents`), `erosion`, `weirdness` (`ridges`)):
+    - If `pack.hasClimateConfig(param)` → `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / etc.).
     - Otherwise → pass through the **wired vanilla function** unchanged (no wrapper, no `Identity` — avoids per-call `SinglePointContext` allocation).
+  - `depth` is **always** vanilla pass-through — it's a derived function (`yClampedGradient + offset spline`) and is not independently configurable.
   - All non-climate fields (`barrierNoise`, `fluidLevelFloodednessNoise`, `fluidLevelSpreadNoise`, `lavaNoise`, `initialDensityWithoutJaggedness`, `finalDensity`, `veinToggle`, `veinRidged`, `veinGap`) are passed through wired vanilla unchanged.
+- Important consequence discovered from the `ocean` pack test: replacing `NoiseRouter.continents()` changes the exposed router field and the rebuilt biome sampler, but does **not** automatically rewrite vanilla's already-wired terrain density graph. Vanilla terrain shape is not computed by dynamically asking `router.continents()` at runtime. It is computed by nested density functions inside `depth`, `initialDensityWithoutJaggedness`, and `finalDensity`, and those nested functions were wired before Firma replaced the top-level router fields.
 - **Hack**: reflectively set `RandomState.router` (a `final` field) to the patched router.
   - We deliberately do **not** touch `NoiseBasedChunkGenerator.settings`: replacing it with a `Holder.direct(...)` would round-trip through the codec on save and our custom `DensityFunction`s encode as `{}`, corrupting `level.dat` (`"No key dimensions in MapLike[{}]"` on reload).
   - `RandomState.router` is transient (rebuilt every server start from `settings`), so this hack is save-safe.
@@ -120,6 +122,103 @@ Wraps a vanilla `ChunkGenerator`. Each override checks `voidMode`:
 | `codec()` | `MapCodec.assumeMapUnsafe(ChunkGenerator.CODEC)` — never actually serialized; we don't replace the generator in `settings`/`level.dat` |
 
 `FirmaChunkGenerator.generateNoise` (Bukkit-side) is only reached for `VOID` — and there it just returns. For other modes the Paper plumbing eventually calls our NMS delegate, which calls vanilla.
+
+---
+
+## 2.4 Vanilla terrain-shape path: why `continentalness` affects more than biomes
+
+Vanilla `overworld.json` exposes the six climate functions in `noise_router`, but the terrain generator does not use those six fields as independent late-bound variables. During `RandomState` construction, the full density graph is wired into callable functions.
+
+Relevant vanilla data path from `worldgen/noise_settings/overworld.json`:
+
+```json
+"continents": "minecraft:overworld/continents",
+"depth": "minecraft:overworld/depth",
+"initial_density_without_jaggedness": { ... "minecraft:overworld/depth" ... "minecraft:overworld/factor" ... },
+"final_density": { ... "minecraft:overworld/sloped_cheese" ... }
+```
+
+Relevant vanilla source path from `NoiseRouterData.registerTerrainNoises(...)`:
+
+```java
+Coordinate continents = new DensityFunctions.Spline.Coordinate(continentalness);
+Coordinate erosion = new DensityFunctions.Spline.Coordinate(erosion);
+Coordinate ridges = new DensityFunctions.Spline.Coordinate(RIDGES);
+Coordinate ridgesFolded = new DensityFunctions.Spline.Coordinate(RIDGES_FOLDED);
+
+offset = spline(TerrainProvider.overworldOffset(continents, erosion, ridgesFolded, amplified));
+factor = spline(TerrainProvider.overworldFactor(continents, erosion, ridges, ridgesFolded, amplified));
+depth = yClampedGradient(-64, 320, 1.5, -1.5) + offset;
+jaggedness = spline(TerrainProvider.overworldJaggedness(continents, erosion, ridges, ridgesFolded, amplified));
+slopedCheese = noiseGradientDensity(factor, depth + jaggedness * jaggedNoise);
+finalDensity = ... slopedCheese ... caves ... aquifers ...;
+```
+
+So the terrain-shape dependency chain is:
+
+```text
+continentalness
+  ├─ overworld/offset
+  │    └─ overworld/depth
+  │         ├─ initial_density_without_jaggedness
+  │         └─ overworld/sloped_cheese
+  │              └─ final_density
+  ├─ overworld/factor
+  │    ├─ initial_density_without_jaggedness
+  │    └─ overworld/sloped_cheese
+  │         └─ final_density
+  └─ overworld/jaggedness
+       └─ overworld/sloped_cheese
+            └─ final_density
+
+erosion and ridges/weirdness also feed offset/factor/jaggedness.
+```
+
+### Consequence for Firma PACK mode
+
+Firma currently patches:
+
+- `RandomState.router.continents()`
+- `RandomState.router.erosion()`
+- `RandomState.router.ridges()`
+- `RandomState.sampler` for biome lookup
+
+But Firma currently passes through:
+
+- `vanillaRouter.depth()`
+- `vanillaRouter.initialDensityWithoutJaggedness()`
+- `vanillaRouter.finalDensity()`
+
+Those pass-through terrain functions still contain the original wired vanilla dependencies captured during `RandomState` construction. A pack that pins `continentalness` to `-1.01` can therefore affect biome selection while terrain height remains driven by vanilla continentalness through the unchanged `finalDensity` graph.
+
+Observed symptom:
+
+- A water-world pack with only:
+  ```yaml
+  climate:
+    continentalness:
+      type: constant
+      value: -1.01
+  ```
+  can still generate normal land/hills/plains-shaped terrain with water features (e.g. icebergs), because the top-level climate field and biome sampler are patched but the terrain density graph remains vanilla.
+
+### Pass-through audit
+
+`FirmaNoiseRouter.patchClimateFunctions(...)` passes these vanilla router fields through unchanged:
+
+| Pass-through field | Vanilla role | Depends on patched climate inputs? | Discrepancy risk |
+|---|---|---:|---|
+| `barrierNoise` | Aquifer barrier noise from `Noises.AQUIFER_BARRIER` | No direct dependency found | Low; independent aquifer noise parameter. |
+| `fluidLevelFloodednessNoise` | Aquifer fluid-level floodedness from `Noises.AQUIFER_FLUID_LEVEL_FLOODEDNESS` | No direct dependency found | Low; independent aquifer noise parameter. |
+| `fluidLevelSpreadNoise` | Aquifer fluid-level spread from `Noises.AQUIFER_FLUID_LEVEL_SPREAD` | No direct dependency found | Low; independent aquifer noise parameter. |
+| `lavaNoise` | Aquifer lava selector from `Noises.AQUIFER_LAVA` | No direct dependency found | Low; independent aquifer noise parameter. |
+| `initialDensityWithoutJaggedness` | Terrain preliminary density/debug value; uses `overworld/depth` and `overworld/factor` | Yes: stale `depth`/`factor` derive from vanilla `continentalness`, `erosion`, and `ridges` | High; must be kept consistent with patched climate terrain inputs. |
+| `finalDensity` | Main block density used by `NoiseChunk`; includes `sloped_cheese`, cave functions, slide/postprocess, noodle | Yes: stale `sloped_cheese` derives from vanilla `depth`, `factor`, and `jaggedness` | High; this is the main source of stale landmass shape. |
+| `veinToggle` | Ore vein vertical/noise selector using `Noises.ORE_VEININESS` | No direct climate dependency found | Low for terrain/climate; independent ore-vein path. |
+| `veinRidged` | Ore vein ridge strength using `Noises.ORE_VEIN_A/B` and Y range | No direct climate dependency found | Low for terrain/climate; independent ore-vein path. |
+| `veinGap` | Ore vein gap noise using `Noises.ORE_GAP` | No direct climate dependency found | Low for terrain/climate; independent ore-vein path. |
+
+Additional consumer risk: vanilla `Aquifer` reads `noiseRouter.erosion()` and `noiseRouter.depth()` directly in addition to the aquifer noise fields. Firma does patch the top-level `erosion` and `depth` fields, but if `depth` is pass-through vanilla while `continentalness` is custom, aquifer decisions can see a climate mix that does not match the terrain density graph.
 
 ---
 
@@ -195,3 +294,22 @@ A single `long` seed is the root of every deterministic noise decision. Its path
 - **Unknown pack id**: `Firma.getDefaultWorldGenerator` throws `IllegalArgumentException` with a list of valid ids. World creation is aborted — we never silently fall back to vanilla, because a typo would otherwise produce the wrong world. `FirmaChunkGenerator.parseMode` has the same guard as a backstop.
 - **`FirmaChunkGenerator.generateNoise` warning**: if Paper ever calls this path for `VANILLA`/`PACK`, it means NMS injection didn't run — logged but non-fatal.
 - **Concurrent world init**: `injectedWorlds` is a `ConcurrentHashMap.newKeySet()`; first call wins, repeats are no-ops.
+
+---
+
+## 6. Requirements to fix the terrain-density mismatch
+
+- **Preserve save safety**: any fix must keep custom Firma `DensityFunction`s out of `NoiseBasedChunkGenerator.settings` and out of any normal `level.dat` codec encode path.
+- **Patch biome and terrain consistently**: pack-configured climate parameters must affect both `RandomState.sampler` biome lookup and the terrain density graph used by chunk block generation.
+- **Account for vanilla terrain dependencies**: overriding `continentalness`, `erosion`, or `weirdness/ridges` must also update the dependent terrain functions that vanilla derives from them: `offset`, `factor`, `jaggedness`, `depth`, `sloped_cheese`, `initialDensityWithoutJaggedness`, and `finalDensity`.
+- **Classify pass-through fields by dependency**: retain independent vanilla pass-throughs (`barrierNoise`, `fluidLevelFloodednessNoise`, `fluidLevelSpreadNoise`, `lavaNoise`, `veinToggle`, `veinRidged`, `veinGap`) only after verifying they do not capture patched climate inputs.
+- **Reconcile aquifer inputs**: ensure aquifer-visible `erosion` and `depth` are consistent with the same patched climate-derived terrain graph used by `finalDensity`.
+- **Reconcile direct `depth` overrides**: if a pack explicitly overrides `depth`, define whether that depth also drives terrain `initialDensityWithoutJaggedness`/`finalDensity`, aquifer depth, biome sampler depth, or all of them; avoid having separate stale depth meanings.
+- **Reconcile `weirdness/ridges` derivatives**: overriding `weirdness` must update any terrain use of raw ridges and folded ridges, including `RIDGES_FOLDED`/`peaksAndValleys` paths feeding `offset`, `factor`, and `jaggedness`.
+- **Preserve vanilla pass-through behavior**: unspecified pack climate parameters must continue to use wired vanilla functions with their original world-seed behavior.
+- **Preserve vanilla terrain math**: the updated terrain graph must use the same vanilla spline relationships from `TerrainProvider.overworldOffset`, `TerrainProvider.overworldFactor`, and `TerrainProvider.overworldJaggedness`.
+- **Handle dependency order explicitly**: terrain-derived functions must be built from the final patched versions of their inputs, not from stale vanilla holders.
+- **Avoid hot-path wrapper regressions**: any replacement terrain density functions must avoid unnecessary `SinglePointContext` allocation or other per-sample overhead in `finalDensity`.
+- **Keep `Climate.Sampler` rebuild mandatory**: fixing terrain does not remove the need to rebuild `RandomState.sampler`; biome lookup still captures functions independently.
+- **Add verification coverage**: tests or diagnostics must prove that a constant continentalness pack affects both biome climate samples and the terrain density/final-density path.
+- **Document expected outcomes**: the water-world case (`continentalness = -1.01`) should be recorded as a regression scenario: terrain should no longer produce vanilla landmass shapes when continentalness is pinned to deep-ocean values.

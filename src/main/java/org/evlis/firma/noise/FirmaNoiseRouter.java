@@ -39,9 +39,9 @@ public class FirmaNoiseRouter {
         DensityFunction weirdness = pack.hasClimateConfig("weirdness")
             ? factory.build(pack.getClimateConfig("weirdness"), "weirdness", vanillaRouter.ridges())
             : vanillaRouter.ridges();
-        DensityFunction depth = pack.hasClimateConfig("depth")
-            ? factory.build(pack.getClimateConfig("depth"), "depth", vanillaRouter.depth())
-            : vanillaRouter.depth();
+        
+        // Depth is always vanilla - it's a derived function (yClampedGradient + offset spline)
+        // and should not be independently configurable.
         
         // Pass vanilla functions directly for non-climate fields - wrapping them in Identity
         // would cause per-call SinglePointContext allocations on hot terrain-gen paths.
@@ -54,7 +54,7 @@ public class FirmaNoiseRouter {
             humidity,
             continents,
             erosion,
-            depth,
+            vanillaRouter.depth(),
             weirdness,
             vanillaRouter.initialDensityWithoutJaggedness(),
             vanillaRouter.finalDensity(),
@@ -104,13 +104,11 @@ public class FirmaNoiseRouter {
             PositionalRandomFactory factory = new PositionalRandomFactory(seed);
             
             // Create custom climate functions
-            // Build in dependency order: depth depends on continents
             FirmaClimateFunction temperature = createTemperatureFunction(factory, mode);
             FirmaClimateFunction humidity = createHumidityFunction(factory, mode);
             FirmaClimateFunction continents = createContinentsFunction(factory, mode);
             FirmaClimateFunction erosion = createErosionFunction(factory, mode);
             FirmaClimateFunction weirdness = createWeirdnessFunction(factory, mode);
-            FirmaClimateFunction depth = createDepthFunction(factory, mode, continents);
             
             return new NoiseRouter(
                 new FirmaClimateFunction.Identity(vanillaRouter.barrierNoise()),
@@ -121,7 +119,7 @@ public class FirmaNoiseRouter {
                 humidity,
                 continents,
                 erosion,
-                depth,
+                new FirmaClimateFunction.Identity(vanillaRouter.depth()),
                 weirdness,
                 new FirmaClimateFunction.Identity(vanillaRouter.initialDensityWithoutJaggedness()),
                 new FirmaClimateFunction.Identity(vanillaRouter.finalDensity()),
@@ -229,17 +227,6 @@ public class FirmaNoiseRouter {
         
         // Return as-is (ridges fold is applied by vanilla, not by us)
         return weirdness;
-    }
-    
-    /**
-     * Create depth function - Y-clamped gradient + continentalness offset.
-     * Vanilla: yClampedGradient(-64, 320, 1.5, -1.5) + offset
-     */
-    private static FirmaClimateFunction createDepthFunction(PositionalRandomFactory factory, 
-                                                           PatchMode mode,
-                                                           FirmaClimateFunction continents) {
-        // Depth is gradient + continentalness offset
-        return new DepthClimateFunction(continents, -64, 320, 1.5, -1.5);
     }
     
     /**

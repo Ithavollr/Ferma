@@ -48,8 +48,3 @@ climate:
     amplitudes: [1.0, 2.0, 1.0, 0.0, 0.0, 0.0]
     xz_scale: 0.25
     y_scale: 0.0
-
-  depth:
-    type: y_clamped_gradient
-    min_y: -64
-    max_y: 320

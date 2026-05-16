@@ -69,18 +69,6 @@ class FirmaDensityFunctionCodecGuardTest {
     }
 
     @Test
-    void depthClimate_codecErrorsOnEncode() {
-        DepthClimateFunction df = new DepthClimateFunction(
-            new FirmaClimateFunction.Constant(0.0),
-            -64,
-            320,
-            1.5,
-            -1.5
-        );
-        assertCodecErrorsOnEncode(df);
-    }
-
-    @Test
     void radialGradient_codecErrorsOnEncode() {
         // Bidirectional radial gradient: start 1.0 at center, fall -0.0002 per block, clamp at -1.05
         RadialGradientClimateFunction df = new RadialGradientClimateFunction(

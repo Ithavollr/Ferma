@@ -1,14 +1,18 @@
 package org.evlis.firma.pack;
 
+import org.bukkit.plugin.Plugin;
 import org.evlis.firma.Firma;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
@@ -105,16 +109,24 @@ public class PackLoader {
             Object climateObj = data.get("climate");
             if (climateObj instanceof Map) {
                 Map<String, Object> climateMap = (Map<String, Object>) climateObj;
+                // Valid climate parameters (depth is not configurable - it's always derived)
+                Set<String> validParams = Set.of("temperature", "humidity", "continentalness", "erosion", "weirdness");
+                
                 for (Map.Entry<String, Object> entry : climateMap.entrySet()) {
                     String param = entry.getKey();
                     Object configObj = entry.getValue();
+                    
+                    // Validate parameter name
+                    if (!validParams.contains(param)) {
+                        throw new IllegalArgumentException("Unknown climate parameter '" + param + "' in pack '" + packId + "'. Valid parameters are: " + validParams);
+                    }
                     
                     if (configObj instanceof Map) {
                         try {
                             ClimateFunctionConfig config = parseClimateConfig((Map<String, Object>) configObj);
                             climate.put(param, config);
                         } catch (Exception e) {
-                            logger.warning("Failed to parse climate config for '" + param + "' in pack '" + packId + "': " + e.getMessage());
+                            throw new IllegalArgumentException("Failed to parse climate config for '" + param + "' in pack '" + packId + "': " + e.getMessage(), e);
                         }
                     }
                 }
@@ -181,11 +193,6 @@ public class PackLoader {
                 ClimateFunctionConfig source = sourceMap != null ? parseClimateConfig(sourceMap) :
                     new ClimateFunctionConfig.Identity();
                 yield new ClimateFunctionConfig.WeirdnessToRidges(source);
-            }
-            case "y_clamped_gradient" -> {
-                int minY = ((Number) config.getOrDefault("min_y", -64)).intValue();
-                int maxY = ((Number) config.getOrDefault("max_y", 320)).intValue();
-                yield new ClimateFunctionConfig.YClampedGradient(minY, maxY);
             }
             case "radial_gradient" -> {
                 // Bidirectional radial function: startValue + rate * distance, clamped.
