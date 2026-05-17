@@ -198,10 +198,23 @@ public class FirmaNoiseRouter {
         
         // Create wired jagged noise - we need to instantiate the NormalNoise, not just hold the parameters
         // Vanilla wires this via NoiseWiringHelper.visitNoise() which calls randomState.getOrCreateNoise()
+        // We create the un-wired function then wire it via mapAll with a visitor that resolves the noise
         Holder<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters> jaggedHolder = noisesGetter.getOrThrow(Noises.JAGGED);
-        net.minecraft.world.level.levelgen.synth.NormalNoise jaggedNoiseInstance = randomState.getOrCreateNoise(Noises.JAGGED);
-        DensityFunction.NoiseHolder wiredJaggedHolder = new DensityFunction.NoiseHolder(jaggedHolder, jaggedNoiseInstance);
-        DensityFunction jaggedNoise = new DensityFunctions.Noise(wiredJaggedHolder, 1500.0, 0.0);
+        DensityFunction jaggedNoiseUnwired = DensityFunctions.noise(jaggedHolder, 1500.0, 0.0);
+        DensityFunction jaggedNoise = jaggedNoiseUnwired.mapAll(new DensityFunction.Visitor() {
+            @Override
+            public DensityFunction.NoiseHolder visitNoise(DensityFunction.NoiseHolder noiseHolder) {
+                net.minecraft.world.level.levelgen.synth.NormalNoise noise = randomState.getOrCreateNoise(
+                    noiseHolder.noiseData().unwrapKey().orElseThrow()
+                );
+                return new DensityFunction.NoiseHolder(noiseHolder.noiseData(), noise);
+            }
+            
+            @Override
+            public DensityFunction apply(DensityFunction densityFunction) {
+                return densityFunction;
+            }
+        });
         
         // Get BASE_3D_NOISE_OVERWORLD - vanilla uses: BlendedNoise.createUnseeded(0.25, 0.125, 80.0, 160.0, 8.0)
         // then wires it with the terrain random source via RandomState.random.fromHashOf("minecraft:terrain")
