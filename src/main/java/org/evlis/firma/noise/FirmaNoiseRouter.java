@@ -185,53 +185,18 @@ public class FirmaNoiseRouter {
         // Build sloped_cheese from our rebuilt terrain inputs
         // sloped_cheese = noiseGradientDensity(factor, depth + jaggedness * jaggedNoise) + BASE_3D_NOISE
         
-        // Get jagged noise - vanilla uses: DensityFunctions.noise(Noises.JAGGED, 1500.0, 0.0)
-        // Access the private noises HolderGetter from RandomState via reflection
-        net.minecraft.core.HolderGetter<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters> noisesGetter;
-        try {
-            java.lang.reflect.Field noisesField = RandomState.class.getDeclaredField("noises");
-            noisesField.setAccessible(true);
-            noisesGetter = (net.minecraft.core.HolderGetter<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters>) noisesField.get(randomState);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to access RandomState.noises field", e);
-        }
+        // Access private fields from RandomState via reflection
+        NoiseAccess noiseAccess = new NoiseAccess(randomState);
         
-        // Create wired jagged noise - we need to instantiate the NormalNoise, not just hold the parameters
-        // Vanilla wires this via NoiseWiringHelper.visitNoise() which calls randomState.getOrCreateNoise()
-        // We create the un-wired function then wire it via mapAll with a visitor that resolves the noise
-        Holder<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters> jaggedHolder = noisesGetter.getOrThrow(Noises.JAGGED);
-        DensityFunction jaggedNoiseUnwired = DensityFunctions.noise(jaggedHolder, 1500.0, 0.0);
-        DensityFunction jaggedNoise = jaggedNoiseUnwired.mapAll(new DensityFunction.Visitor() {
-            @Override
-            public DensityFunction.NoiseHolder visitNoise(DensityFunction.NoiseHolder noiseHolder) {
-                net.minecraft.world.level.levelgen.synth.NormalNoise noise = randomState.getOrCreateNoise(
-                    noiseHolder.noiseData().unwrapKey().orElseThrow()
-                );
-                return new DensityFunction.NoiseHolder(noiseHolder.noiseData(), noise);
-            }
-            
-            @Override
-            public DensityFunction apply(DensityFunction densityFunction) {
-                return densityFunction;
-            }
-        });
+        // Create wired jagged noise matching vanilla: DensityFunctions.noise(Noises.JAGGED, 1500.0, 0.0)
+        DensityFunction jaggedNoise = noiseAccess.wireNoise(
+            DensityFunctions.noise(noiseAccess.noises.getOrThrow(Noises.JAGGED), 1500.0, 0.0)
+        );
         
-        // Get BASE_3D_NOISE_OVERWORLD - vanilla uses: BlendedNoise.createUnseeded(0.25, 0.125, 80.0, 160.0, 8.0)
-        // then wires it with the terrain random source via RandomState.random.fromHashOf("minecraft:terrain")
-        // We must access RandomState.random (PositionalRandomFactory) via reflection to match vanilla's seeding
-        RandomSource terrainRandom;
-        try {
-            java.lang.reflect.Field randomField = RandomState.class.getDeclaredField("random");
-            randomField.setAccessible(true);
-            net.minecraft.world.level.levelgen.PositionalRandomFactory randomFactory = 
-                (net.minecraft.world.level.levelgen.PositionalRandomFactory) randomField.get(randomState);
-            terrainRandom = randomFactory.fromHashOf(ResourceLocation.withDefaultNamespace("terrain"));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to access RandomState.random field", e);
-        }
+        // Create wired BASE_3D_NOISE_OVERWORLD matching vanilla's BlendedNoise seeding
         DensityFunction base3dNoise = BlendedNoise.createUnseeded(
             0.25, 0.125, 80.0, 160.0, 8.0
-        ).withNewRandom(terrainRandom);
+        ).withNewRandom(noiseAccess.terrainRandom);
         
         // Build sloped_cheese: noiseGradientDensity(factor, depth + jaggedness * jaggedNoise) + BASE_3D_NOISE
         DensityFunction factorCached = DensityFunctions.cache2d(factor);
@@ -240,21 +205,34 @@ public class FirmaNoiseRouter {
         DensityFunction slopedCheeseBase = noiseGradientDensity(factorCached, depthWithJaggedness);
         DensityFunction slopedCheese = DensityFunctions.add(slopedCheeseBase, base3dNoise);
         
-        // Now rebuild the full finalDensity pipeline using our sloped_cheese
+        // Rebuild full finalDensity pipeline with noise caves (Option B from Noise_Path.md §2.4)
         // Vanilla structure (from NoiseRouterData.overworld):
         // densityFunction7 = min(slopedCheese, mul(constant(5.0), ENTRANCES))
         // densityFunction8 = rangeChoice(slopedCheese, -1000000.0, 1.5625, densityFunction7, underground(...))
         // densityFunction9 = min(postProcess(slideOverworld(amplified, densityFunction8)), NOODLE)
         
-        // We'll use vanilla's cave/aquifer/noodle functions from the wired router
-        // Extract them by accessing the registry functions through RandomState
-        // For now, use a simplified approach: just return sloped_cheese with slide
-        // TODO: Fully rebuild the cave/aquifer/noodle pipeline
+        DensityFunction spaghettiRoughness = rebuildSpaghettiRoughness(noiseAccess);
+        DensityFunction entrances = rebuildEntrances(noiseAccess, spaghettiRoughness);
+        DensityFunction spaghetti2d = rebuildSpaghetti2D(noiseAccess);
+        DensityFunction pillars = rebuildPillars(noiseAccess);
+        DensityFunction noodle = rebuildNoodle(noiseAccess);
         
-        DensityFunction slided = slideOverworld(amplified, slopedCheese);
+        DensityFunction underground = rebuildUnderground(
+            slopedCheese, entrances, spaghetti2d, spaghettiRoughness, pillars, noiseAccess
+        );
+        
+        // Compose full pipeline: entrance caves -> range choice -> slide -> postProcess -> noodle
+        DensityFunction withEntrances = DensityFunctions.min(
+            slopedCheese,
+            DensityFunctions.mul(DensityFunctions.constant(5.0), entrances)
+        );
+        DensityFunction withCaves = DensityFunctions.rangeChoice(
+            slopedCheese, -1000000.0, 1.5625, withEntrances, underground
+        );
+        DensityFunction slided = slideOverworld(amplified, withCaves);
         DensityFunction postProcessed = postProcess(slided);
         
-        return postProcessed;
+        return DensityFunctions.min(postProcessed, noodle);
     }
     
     /**
@@ -399,6 +377,232 @@ public class FirmaNoiseRouter {
                     UnserializableMapCodec.of("PeaksAndValleysFunction", new PeaksAndValleysFunction(DensityFunctions.zero()))
             );
         }
+    }
+    
+    /**
+     * Helper providing access to RandomState's private noise fields via reflection.
+     * Encapsulates all reflection access and provides noise wiring utilities.
+     */
+    private static class NoiseAccess {
+        final net.minecraft.core.HolderGetter<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters> noises;
+        final RandomSource terrainRandom;
+        private final RandomState randomState;
+        
+        NoiseAccess(RandomState randomState) {
+            this.randomState = randomState;
+            try {
+                java.lang.reflect.Field noisesField = RandomState.class.getDeclaredField("noises");
+                noisesField.setAccessible(true);
+                this.noises = (net.minecraft.core.HolderGetter<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters>)
+                    noisesField.get(randomState);
+                
+                java.lang.reflect.Field randomField = RandomState.class.getDeclaredField("random");
+                randomField.setAccessible(true);
+                net.minecraft.world.level.levelgen.PositionalRandomFactory randomFactory =
+                    (net.minecraft.world.level.levelgen.PositionalRandomFactory) randomField.get(randomState);
+                this.terrainRandom = randomFactory.fromHashOf(ResourceLocation.withDefaultNamespace("terrain"));
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to access RandomState private fields", e);
+            }
+        }
+        
+        /**
+         * Wire an un-wired DensityFunction by resolving all NoiseHolder references
+         * to their instantiated NormalNoise instances. Mirrors vanilla's NoiseWiringHelper.visitNoise().
+         */
+        DensityFunction wireNoise(DensityFunction unwired) {
+            return unwired.mapAll(new DensityFunction.Visitor() {
+                @Override
+                public DensityFunction.NoiseHolder visitNoise(DensityFunction.NoiseHolder noiseHolder) {
+                    net.minecraft.world.level.levelgen.synth.NormalNoise noise = randomState.getOrCreateNoise(
+                        noiseHolder.noiseData().unwrapKey().orElseThrow()
+                    );
+                    return new DensityFunction.NoiseHolder(noiseHolder.noiseData(), noise);
+                }
+                
+                @Override
+                public DensityFunction apply(DensityFunction densityFunction) {
+                    return densityFunction;
+                }
+            });
+        }
+    }
+    
+    // ========== Cave function rebuilders (matching NoiseRouterData exactly) ==========
+    
+    // WeirdScaledSampler.RarityValueMapper is protected, so we access the enum constants via reflection
+    private static final Object RARITY_TYPE1;
+    private static final Object RARITY_TYPE2;
+    private static final java.lang.reflect.Method WEIRD_SCALED_SAMPLER_METHOD;
+    static {
+        try {
+            Class<?> rarityClass = Class.forName(
+                "net.minecraft.world.level.levelgen.DensityFunctions$WeirdScaledSampler$RarityValueMapper"
+            );
+            RARITY_TYPE1 = Enum.valueOf((Class<Enum>) rarityClass, "TYPE1");
+            RARITY_TYPE2 = Enum.valueOf((Class<Enum>) rarityClass, "TYPE2");
+            WEIRD_SCALED_SAMPLER_METHOD = DensityFunctions.class.getMethod(
+                "weirdScaledSampler", DensityFunction.class, Holder.class, rarityClass
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to access WeirdScaledSampler.RarityValueMapper", e);
+        }
+    }
+    
+    private static DensityFunction weirdScaledSampler(
+        DensityFunction input, Holder<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters> noiseData, Object rarityType
+    ) {
+        try {
+            return (DensityFunction) WEIRD_SCALED_SAMPLER_METHOD.invoke(null, input, noiseData, rarityType);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to invoke weirdScaledSampler", e);
+        }
+    }
+    
+    /**
+     * Matches NoiseRouterData.spaghettiRoughnessFunction().
+     */
+    private static DensityFunction rebuildSpaghettiRoughness(NoiseAccess na) {
+        DensityFunction roughness = DensityFunctions.noise(na.noises.getOrThrow(Noises.SPAGHETTI_ROUGHNESS));
+        DensityFunction modulator = DensityFunctions.mappedNoise(na.noises.getOrThrow(Noises.SPAGHETTI_ROUGHNESS_MODULATOR), 0.0, -0.1);
+        return na.wireNoise(
+            DensityFunctions.cacheOnce(DensityFunctions.mul(modulator, DensityFunctions.add(roughness.abs(), DensityFunctions.constant(-0.4))))
+        );
+    }
+    
+    /**
+     * Matches NoiseRouterData.entrances().
+     */
+    private static DensityFunction rebuildEntrances(NoiseAccess na, DensityFunction spaghettiRoughness) {
+        DensityFunction rarity = DensityFunctions.cacheOnce(DensityFunctions.noise(na.noises.getOrThrow(Noises.SPAGHETTI_3D_RARITY), 2.0, 1.0));
+        DensityFunction thickness = DensityFunctions.mappedNoise(na.noises.getOrThrow(Noises.SPAGHETTI_3D_THICKNESS), -0.065, -0.088);
+        DensityFunction spaghetti3d1 = weirdScaledSampler(
+            rarity, na.noises.getOrThrow(Noises.SPAGHETTI_3D_1), RARITY_TYPE1
+        );
+        DensityFunction spaghetti3d2 = weirdScaledSampler(
+            rarity, na.noises.getOrThrow(Noises.SPAGHETTI_3D_2), RARITY_TYPE1
+        );
+        DensityFunction spaghetti3dCombined = DensityFunctions.add(
+            DensityFunctions.max(spaghetti3d1, spaghetti3d2), thickness
+        ).clamp(-1.0, 1.0);
+        DensityFunction caveEntrance = DensityFunctions.noise(na.noises.getOrThrow(Noises.CAVE_ENTRANCE), 0.75, 0.5);
+        DensityFunction entranceGradient = DensityFunctions.add(
+            DensityFunctions.add(caveEntrance, DensityFunctions.constant(0.37)),
+            DensityFunctions.yClampedGradient(-10, 30, 0.3, 0.0)
+        );
+        return na.wireNoise(
+            DensityFunctions.cacheOnce(DensityFunctions.min(entranceGradient, DensityFunctions.add(spaghettiRoughness, spaghetti3dCombined)))
+        );
+    }
+    
+    /**
+     * Matches NoiseRouterData.spaghetti2D().
+     */
+    private static DensityFunction rebuildSpaghetti2D(NoiseAccess na) {
+        DensityFunction modulator = DensityFunctions.noise(na.noises.getOrThrow(Noises.SPAGHETTI_2D_MODULATOR), 2.0, 1.0);
+        DensityFunction sampler = weirdScaledSampler(
+            modulator, na.noises.getOrThrow(Noises.SPAGHETTI_2D), RARITY_TYPE2
+        );
+        DensityFunction elevation = DensityFunctions.mappedNoise(
+            na.noises.getOrThrow(Noises.SPAGHETTI_2D_ELEVATION), 0.0, Math.floorDiv(-64, 8), 8.0
+        );
+        DensityFunction thicknessModulator = DensityFunctions.cacheOnce(
+            DensityFunctions.mappedNoise(na.noises.getOrThrow(Noises.SPAGHETTI_2D_THICKNESS), 2.0, 1.0, -0.6, -1.3)
+        );
+        DensityFunction elevationGradient = DensityFunctions.add(
+            elevation, DensityFunctions.yClampedGradient(-64, 320, 8.0, -40.0)
+        ).abs();
+        DensityFunction shaped = DensityFunctions.add(elevationGradient, thicknessModulator).cube();
+        DensityFunction combined = DensityFunctions.add(
+            sampler, DensityFunctions.mul(DensityFunctions.constant(0.083), thicknessModulator)
+        );
+        return na.wireNoise(DensityFunctions.max(combined, shaped).clamp(-1.0, 1.0));
+    }
+    
+    /**
+     * Matches NoiseRouterData.pillars().
+     */
+    private static DensityFunction rebuildPillars(NoiseAccess na) {
+        DensityFunction pillar = DensityFunctions.noise(na.noises.getOrThrow(Noises.PILLAR), 25.0, 0.3);
+        DensityFunction rareness = DensityFunctions.mappedNoise(na.noises.getOrThrow(Noises.PILLAR_RARENESS), 0.0, -2.0);
+        DensityFunction thickness = DensityFunctions.mappedNoise(na.noises.getOrThrow(Noises.PILLAR_THICKNESS), 0.0, 1.1);
+        DensityFunction combined = DensityFunctions.add(
+            DensityFunctions.mul(pillar, DensityFunctions.constant(2.0)), rareness
+        );
+        return na.wireNoise(DensityFunctions.cacheOnce(DensityFunctions.mul(combined, thickness.cube())));
+    }
+    
+    /**
+     * Matches NoiseRouterData.noodle().
+     * Vanilla's Y function is yClampedGradient(MIN_Y*2, MAX_Y*2, MIN_Y*2, MAX_Y*2) = yClampedGradient(-128, 768, -128, 768).
+     */
+    private static DensityFunction rebuildNoodle(NoiseAccess na) {
+        DensityFunction yFunc = DensityFunctions.yClampedGradient(-128, 768, -128, 768);
+        DensityFunction noodleNoise = yLimitedInterpolatable(
+            yFunc, DensityFunctions.noise(na.noises.getOrThrow(Noises.NOODLE), 1.0, 1.0), -60, 320, -1
+        );
+        DensityFunction thickness = yLimitedInterpolatable(
+            yFunc, DensityFunctions.mappedNoise(na.noises.getOrThrow(Noises.NOODLE_THICKNESS), 1.0, 1.0, -0.05, -0.1), -60, 320, 0
+        );
+        DensityFunction ridgeA = yLimitedInterpolatable(
+            yFunc, DensityFunctions.noise(na.noises.getOrThrow(Noises.NOODLE_RIDGE_A), 2.6666666666666665, 2.6666666666666665), -60, 320, 0
+        );
+        DensityFunction ridgeB = yLimitedInterpolatable(
+            yFunc, DensityFunctions.noise(na.noises.getOrThrow(Noises.NOODLE_RIDGE_B), 2.6666666666666665, 2.6666666666666665), -60, 320, 0
+        );
+        DensityFunction ridgeCombined = DensityFunctions.mul(
+            DensityFunctions.constant(1.5), DensityFunctions.max(ridgeA.abs(), ridgeB.abs())
+        );
+        return na.wireNoise(DensityFunctions.rangeChoice(
+            noodleNoise, -1000000.0, 0.0, DensityFunctions.constant(64.0), DensityFunctions.add(thickness, ridgeCombined)
+        ));
+    }
+    
+    /**
+     * Matches NoiseRouterData.underground().
+     */
+    private static DensityFunction rebuildUnderground(
+        DensityFunction slopedCheese,
+        DensityFunction entrances,
+        DensityFunction spaghetti2d,
+        DensityFunction spaghettiRoughness,
+        DensityFunction pillars,
+        NoiseAccess na
+    ) {
+        DensityFunction caveLayer = na.wireNoise(DensityFunctions.noise(na.noises.getOrThrow(Noises.CAVE_LAYER), 8.0));
+        DensityFunction caveCheese = na.wireNoise(DensityFunctions.noise(na.noises.getOrThrow(Noises.CAVE_CHEESE), 0.6666666666666666));
+        
+        DensityFunction layerSquared = DensityFunctions.mul(DensityFunctions.constant(4.0), caveLayer.square());
+        DensityFunction cheeseNoise = DensityFunctions.add(
+            DensityFunctions.add(DensityFunctions.constant(0.27), caveCheese).clamp(-1.0, 1.0),
+            DensityFunctions.add(
+                DensityFunctions.constant(1.5),
+                DensityFunctions.mul(DensityFunctions.constant(-0.64), slopedCheese)
+            ).clamp(0.0, 0.5)
+        );
+        DensityFunction cheeseCaves = DensityFunctions.add(layerSquared, cheeseNoise);
+        
+        DensityFunction allCaves = DensityFunctions.min(
+            DensityFunctions.min(cheeseCaves, entrances),
+            DensityFunctions.add(spaghetti2d, spaghettiRoughness)
+        );
+        
+        DensityFunction pillarsRanged = DensityFunctions.rangeChoice(
+            pillars, -1000000.0, 0.03, DensityFunctions.constant(-1000000.0), pillars
+        );
+        
+        return DensityFunctions.max(allCaves, pillarsRanged);
+    }
+    
+    /**
+     * Matches NoiseRouterData.yLimitedInterpolatable().
+     */
+    private static DensityFunction yLimitedInterpolatable(
+        DensityFunction input, DensityFunction whenInRange, int minY, int maxY, int whenOutOfRange
+    ) {
+        return DensityFunctions.interpolated(
+            DensityFunctions.rangeChoice(input, minY, maxY + 1, whenInRange, DensityFunctions.constant(whenOutOfRange))
+        );
     }
     
     /**

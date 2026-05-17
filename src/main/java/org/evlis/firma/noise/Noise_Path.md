@@ -7,19 +7,20 @@ All file paths are absolute; line numbers reflect current state at time of writi
 
 ## 0. Terminology
 
-- **Wired vs. Un-wired**: `DensityFunction` is one example - analogous to electrical wiring - of connecting abstract blueprints to actual working components.
-An un-wired `DensityFunction` tree is like a circuit schematic: it says "use noise X here" but noise X doesn't exist yet — it's just a `Holder<NormalNoise.NoiseParameters>` pointing at a registry key name. 
-Calling `compute()` would fail because there's no actual noise sampler behind the reference. Wiring is the process in RandomState's constructor where `mapAll(new NoiseWiringHelper())` traverses the entire function tree 
-and resolves each holder against the registry, creates a real noise sampler, replaces `BlendedNoise` with a seeded instance, then unwraps holder refs to their concrete implementations so `compute()` may be called.
+- **Reflection**: Used primarily for "Awful Bukkit Hacks", i.e. accessing private and protected fields and methods to get at internal Mojang code that Bukkit/Paper APIs don't expose.
 - **Codec**: a Mojang DataFixerUpper serializer/deserializer (`com.mojang.serialization.Codec` / `KeyDispatchDataCodec`). Every vanilla `DensityFunction` declares one so it can round-trip through `level.dat` and worldgen JSON. 
 "round-trip" in this context means saving to level.dat (`NoiseGeneratorSettings` encodes via codec -> NBT format -> `level.dat` on disk), adn reloading from disk (`level.dat` -> NBT format -> decoded via same codec and fed 
 to `NoiseGeneratorSettings`). `NoiseRouter` exists inside `NoiseGeneratorSettings` (`NoiseRouter.CODEC.fieldOf("noise_router")`), so every codec inside NoiseRouter (there are 15, and they are all `DensityFunction` codecs) must be 
-preserved for serialization in order to never break `level.dat`. Firma avoids ever neading to deal with codec serialization by never modifying `NoiseGeneratorSettings`, only touching `RandomState` fields that are rebuilt every startup. 
+preserved for serialization in order to never break `level.dat`. Firma avoids ever needing to deal with codec serialization by never modifying `NoiseGeneratorSettings`, only touching `RandomState` fields that are rebuilt every startup. 
 If code is ever added that tries to serialize a Firma `RandomState`, it will run into an instance of `UnserializableMapCodec` and crash out, instead of writing `{}` and corrupting `level.dat`.
 - **Wrapping**: one `DensityFunction` holding another and forwarding calls to it (e.g. `FirmaClimateFunction.Identity` wraps a vanilla function). The concern with wrapping on hot paths like `finalDensity` 
 (sampled millions of times per chunk) is not raw allocation cost — `SinglePointContext` is a trivial 3-int record — but that wrappers can bypass `NoiseChunk`'s caching and interpolation infrastructure. 
 During normal chunk generation, `NoiseChunk` provides a `FunctionContext` that tracks cell positions and caches intermediate results across the density function tree. If a wrapper calls `compute()` on its inner function 
 with a bare `SinglePointContext` instead, that inner function re-evaluates from scratch on every call, losing all caching benefits. We avoid wrapping anything we don't actively transform to keep the normal `NoiseChunk` evaluation path intact.
+- **Wired vs. Un-wired**: `DensityFunction` is one example - analogous to electrical wiring - of connecting abstract blueprints to actual working components.
+  An un-wired `DensityFunction` tree is like a circuit schematic: it says "use noise X here" but noise X doesn't exist yet — it's just a `Holder<NormalNoise.NoiseParameters>` pointing at a registry key name.
+  Calling `compute()` would fail because there's no actual noise sampler behind the reference. Wiring is the process in RandomState's constructor where `mapAll(new NoiseWiringHelper())` traverses the entire function tree
+  and resolves each holder against the registry, creates a real noise sampler, replaces `BlendedNoise` with a seeded instance, then unwraps holder refs to their concrete implementations so `compute()` may be called.
 
 ---
 
@@ -179,75 +180,49 @@ finalDensity = ... slopedCheese ... caves ... aquifers ...;
 Current Firma state (terrain rebuild implementation):
 
 - ✅ **Steps 1-3 complete**: `offset`, `factor`, `jaggedness`, and `depth` are rebuilt from patched climate functions using vanilla's spline logic.
+  - All three spline outputs wrapped in `splineWithBlending(splineValue, blendValue)` = `flatCache(cache2d(lerp(blendAlpha(), blendValue, splineValue)))` matching vanilla exactly.
 - ✅ **Step 4 complete**: `initialDensityWithoutJaggedness` is rebuilt as `slideOverworld(amplified, add(noiseGradientDensity(cache2d(factor), depth), constant(-0.703125)).clamp(-64, 64))`.
-- ⚠️ **Step 5 partial**: `finalDensity` rebuilds `slopedCheese` from patched terrain inputs using `RandomState` to access seeded `jaggedNoise` and `BASE_3D_NOISE_OVERWORLD`, then applies `slideOverworld` and `postProcess`.
+- ✅ **Step 5 complete**: `finalDensity` fully rebuilt with noise cave integration (Option B).
 - ✅ **Step 6 complete**: Only transient `RandomState.router` and `RandomState.sampler` are patched; `NoiseBasedChunkGenerator.settings` remains untouched.
 - ✅ **Step 7 complete**: No `FirmaClimateFunction.Identity` wrappers in rebuilt terrain paths; direct `DensityFunction` composition.
 - `depth` is no longer pack-configurable; it's always derived as `yClampedGradient + rebuiltOffset`.
 - `PackLoader` validates climate parameter names and rejects unknown keys like `depth`.
 
-### Current simplification and remaining work
+### Noise cave integration (Option B — implemented)
 
-**What works now:**
-- Terrain shape (hills, valleys, plains, oceans) correctly responds to patched `continentalness`, `erosion`, and `weirdness`.
-- Ocean packs with constant `-1.01` continentalness should generate flat, low-elevation ocean floor terrain.
-- Biome placement and terrain density are now consistent.
+All noise cave functions rebuilt from `RandomState.noises` via reflection (Option B), matching `NoiseRouterData` exactly.
+Legacy cave carvers are a separate system disabled via datapack.
 
-**Current simplification in `finalDensity`:**
-- Rebuilds core terrain (`slopedCheese`) using patched inputs and applies slide/postProcess.
-- **Missing**: Full vanilla cave/aquifer/noodle pipeline integration.
+**Reflection access encapsulated in `NoiseAccess` helper class:**
+- `NoiseAccess.noises` — `HolderGetter<NormalNoise.NoiseParameters>` from private `RandomState.noises`
+- `NoiseAccess.terrainRandom` — `RandomSource` from `RandomState.random.fromHashOf("minecraft:terrain")`, matching vanilla's `NoiseWiringHelper.wrapNew()` exactly
+- `NoiseAccess.wireNoise(unwired)` — wires an un-wired `DensityFunction` by resolving all `NoiseHolder` references to instantiated `NormalNoise` instances via `randomState.getOrCreateNoise()`. Mirrors vanilla's `NoiseWiringHelper.visitNoise()`.
 
-**Remaining work: noise cave integration**
+**Rebuilt cave functions:**
 
-Vanilla's `finalDensity` pipeline includes noise caves (spaghetti, cheese, noodle, entrances, pillars) that are independent of climate inputs but must be composed with our rebuilt `slopedCheese`. Current simplification skips these, producing solid terrain.
+| Method | Vanilla equivalent | Noises used |
+|---|---|---|
+| `rebuildSpaghettiRoughness(na)` | `NoiseRouterData.spaghettiRoughnessFunction()` | `SPAGHETTI_ROUGHNESS`, `SPAGHETTI_ROUGHNESS_MODULATOR` |
+| `rebuildEntrances(na, spaghettiRoughness)` | `NoiseRouterData.entrances()` | `SPAGHETTI_3D_RARITY`, `SPAGHETTI_3D_THICKNESS`, `SPAGHETTI_3D_1`, `SPAGHETTI_3D_2`, `CAVE_ENTRANCE` |
+| `rebuildSpaghetti2D(na)` | `NoiseRouterData.spaghetti2D()` | `SPAGHETTI_2D_MODULATOR`, `SPAGHETTI_2D`, `SPAGHETTI_2D_ELEVATION`, `SPAGHETTI_2D_THICKNESS` |
+| `rebuildPillars(na)` | `NoiseRouterData.pillars()` | `PILLAR`, `PILLAR_RARENESS`, `PILLAR_THICKNESS` |
+| `rebuildNoodle(na)` | `NoiseRouterData.noodle()` | `NOODLE`, `NOODLE_THICKNESS`, `NOODLE_RIDGE_A`, `NOODLE_RIDGE_B` |
+| `rebuildUnderground(slopedCheese, ...)` | `NoiseRouterData.underground()` | `CAVE_LAYER`, `CAVE_CHEESE` (+ composed cave functions above) |
 
-**Cave function dependencies:**
+**Full `finalDensity` pipeline:**
+```
+slopedCheese = noiseGradientDensity(factor, depth + jaggedness * jaggedNoise) + BASE_3D_NOISE
+withEntrances = min(slopedCheese, mul(5.0, entrances))
+withCaves = rangeChoice(slopedCheese, -1000000, 1.5625, withEntrances, underground)
+slided = slideOverworld(amplified, withCaves)
+postProcessed = postProcess(slided)      // blendDensity -> interpolated -> mul(0.64) -> squeeze
+finalDensity = min(postProcessed, noodle)
+```
 
-| Function | Vanilla source | Climate-dependent? | Needs rebuilding? |
-|---|---|---:|---|
-| `ENTRANCES` | `NoiseRouterData.entrances(...)` | No | No - can use vanilla's wired function |
-| `NOODLE` | `NoiseRouterData.noodle(...)` | No | No - can use vanilla's wired function |
-| `SPAGHETTI_2D` | `NoiseRouterData.spaghetti2D(...)` | No | No - can use vanilla's wired function |
-| `SPAGHETTI_ROUGHNESS` | `NoiseRouterData.spaghettiRoughnessFunction(...)` | No | No - can use vanilla's wired function |
-| `PILLARS` | `NoiseRouterData.pillars(...)` | No | No - can use vanilla's wired function |
-| `underground(...)` | `NoiseRouterData.underground(...)` | **Yes - takes `slopedCheese` as parameter** | **Yes - must rebuild with our `slopedCheese`** |
-
-**Problem:** Vanilla's cave functions are **not exposed** in `NoiseRouter` - they're internal to the wired `finalDensity` tree. We have three options:
-
-**Option A: Extract from vanilla's wired router**
-- Traverse `vanillaRouter.finalDensity()` tree to find the cave function nodes
-- Pro: Uses vanilla's exact seeded instances
-- Con: Requires complex tree traversal; fragile if vanilla changes structure
-
-**Option B: Rebuild from noise parameters**
-- Access `RandomState.noises` (private `HolderGetter<NormalNoise.NoiseParameters>`) via reflection
-- Call `noisesGetter.getOrThrow(Noises.CAVE_ENTRANCE)`, etc. to get holders
-- Reconstruct each cave function following vanilla's exact logic from `NoiseRouterData`
-- Pro: Explicit, maintainable, matches vanilla's construction exactly
-- Con: Requires implementing 5+ helper functions; more code
-
-**Option C: Use vanilla's `finalDensity` as-is (current approach)**
-- Skip cave integration entirely; rely on datapack to disable legacy carvers
-- Pro: Simplest; terrain shape works correctly
-- Con: No underground features (no caves, no aquifers below y=0)
-
-**Decision needed:** Which option to implement?
-
-**If Option B (recommended):**
-- Already have reflection access to `RandomState.noises` (used for `jaggedNoise`)
-- Need to implement:
-  1. `rebuildEntrances(RandomState, noisesGetter)` - spaghetti 3D caves
-  2. `rebuildNoodle(RandomState, noisesGetter)` - noodle caves
-  3. `rebuildSpaghetti2D(noisesGetter)` - 2D spaghetti caves
-  4. `rebuildSpaghettiRoughness(noisesGetter)` - roughness modifier
-  5. `rebuildPillars(noisesGetter)` - pillar caves
-  6. `rebuildUnderground(slopedCheese, ...)` - compose cheese + spaghetti + pillars
-- Then compose: `rangeChoice(slopedCheese, -1000000, 1.5625, min(slopedCheese, mul(5.0, entrances)), underground)` -> `slideOverworld` -> `postProcess` -> `min(..., noodle)`
-
-**Additional considerations:**
-- **Aquifer consistency**: Vanilla `Aquifer` reads `noiseRouter.erosion()` and `noiseRouter.depth()` directly. Our rebuilt `depth` is now in the router, so aquifers should see consistent values.
-- **Legacy carvers**: User will disable via datapack (separate from noise caves).
-- **Y-limited interpolation**: Some cave functions use `yLimitedInterpolatable` which requires access to the `Y` density function from the registry.
+**Remaining considerations:**
+- **Aquifer consistency**: Vanilla `Aquifer` reads `noiseRouter.erosion()` and `noiseRouter.depth()` directly. Our rebuilt `depth` is in the router, so aquifers see consistent values.
+- **Legacy carvers**: Disabled via datapack (separate from noise caves).
+- **Slide function**: Uses `DensityFunctions.lerp()` matching vanilla exactly (earlier manual decomposition caused MAX non-overlapping warnings).
 
 ### Pass-through audit
 
@@ -269,7 +244,7 @@ Vanilla's `finalDensity` pipeline includes noise caves (spaghetti, cheese, noodl
 |---|---|---|
 | `depth` | `yClampedGradient(-64, 320, 1.5, -1.5) + rebuiltOffset` | ✅ Rebuilt from patched climate; derived, not configurable. |
 | `initialDensityWithoutJaggedness` | `slideOverworld(amplified, add(noiseGradientDensity(cache2d(rebuiltFactor), rebuiltDepth), constant(-0.703125)).clamp(-64, 64))` | ✅ Rebuilt from patched terrain inputs. |
-| `finalDensity` | `postProcess(slideOverworld(amplified, rebuiltSlopedCheese))` where `slopedCheese = noiseGradientDensity(rebuiltFactor, rebuiltDepth + rebuiltJaggedness * jaggedNoise) + BASE_3D_NOISE` | ⚠️ Partial; missing cave/noodle integration (see remaining TODO above). |
+| `finalDensity` | Full pipeline: `slopedCheese` -> entrance caves -> `rangeChoice` -> `underground` -> `slideOverworld` -> `postProcess` -> noodle caves (see §2.4 noise cave integration) | ✅ Complete with noise cave integration. |
 
 ---
 
