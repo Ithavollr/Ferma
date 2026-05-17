@@ -7,20 +7,26 @@ All file paths are absolute; line numbers reflect current state at time of writi
 
 ## 0. Terminology
 
-- **Un-wired `DensityFunction`**: the form as decoded from data / held by `NoiseGeneratorSettings`. Its leaves are `Holder<NormalNoise.NoiseParameters>` references and `HolderHolder` wrappers — i.e. *recipes* describing which noise parameter file to use, with no actual `NormalNoise` sampler instance attached. Calling `compute()` on this form returns garbage (un-resolved holders) or throws.
-- **Wired `DensityFunction`**: the same tree after `mapAll(new NoiseWiringHelper())` (run inside `RandomState`'s constructor). Each leaf has been resolved against the registry and instantiated as a real seeded `NormalNoise` (via the world's `PositionalRandomFactory`). This is the form that actually produces numbers when sampled. Interior nodes may also get wrapped in marker/cache types.
-- **Codec**: a Mojang DataFixerUpper serializer/deserializer (`com.mojang.serialization.Codec` / `KeyDispatchDataCodec`). Every vanilla `DensityFunction` declares one so it can round-trip through `level.dat` and worldgen JSON. Our custom climate functions are **never** intended to serialize — they declare an `UnserializableMapCodec` that **errors on encode** so any regression triggers a loud failure instead of silently writing `{}` and corrupting `level.dat`. See §3.1.
-- **Wrapping** (in this doc): one `DensityFunction` holding another and forwarding calls to it (e.g. `FirmaClimateFunction.Identity` wraps a vanilla function). Wrapping has cost: every `compute(FunctionContext)` typically allocates a `SinglePointContext` per call, which is brutal on hot paths like `finalDensity` (called millions of times per chunk). We avoid wrapping anything we don't actively transform.
+- **Wired vs. Un-wired**: `DensityFunction` is one example - analogous to electrical wiring - of connecting abstract blueprints to actual working components.
+An un-wired `DensityFunction` tree is like a circuit schematic: it says "use noise X here" but noise X doesn't exist yet — it's just a `Holder<NormalNoise.NoiseParameters>` pointing at a registry key name. 
+Calling `compute()` would fail because there's no actual noise sampler behind the reference. Wiring is the process in RandomState's constructor where `mapAll(new NoiseWiringHelper())` traverses the entire function tree 
+and resolves each holder against the registry, creates a real noise sampler, replaces `BlendedNoise` with a seeded instance, then unwraps holder refs to their concrete implementations so `compute()` may be called.
+- **Codec**: a Mojang DataFixerUpper serializer/deserializer (`com.mojang.serialization.Codec` / `KeyDispatchDataCodec`). Every vanilla `DensityFunction` declares one so it can round-trip through `level.dat` and worldgen JSON. 
+"round-trip" in this context means saving to level.dat (`NoiseGeneratorSettings` encodes via codec -> NBT format -> `level.dat` on disk), adn reloading from disk (`level.dat` -> NBT format -> decoded via same codec and fed 
+to `NoiseGeneratorSettings`). `NoiseRouter` exists inside `NoiseGeneratorSettings` (`NoiseRouter.CODEC.fieldOf("noise_router")`), so every codec inside NoiseRouter (there are 15, and they are all `DensityFunction` codecs) must be 
+preserved for serialization in order to never break `level.dat`. Firma avoids ever neading to deal with codec serialization by never modifying `NoiseGeneratorSettings`, only touching `RandomState` fields that are rebuilt every startup. 
+If code is ever added that tries to serialize a Firma `RandomState`, it will run into an instance of `UnserializableMapCodec` and crash out, instead of writing `{}` and corrupting `level.dat`.
+EDIT THIS: - **Wrapping** (in this doc): one `DensityFunction` holding another and forwarding calls to it (e.g. `FirmaClimateFunction.Identity` wraps a vanilla function). Wrapping has cost: every `compute(FunctionContext)` typically allocates a `SinglePointContext` per call, which is brutal on hot paths like `finalDensity` (called millions of times per chunk). We avoid wrapping anything we don't actively transform.
 
 ---
 
 ## 1. Vanilla flow (no plugin)
 
-### 1.1 Server startup → world load
+### 1.1 Server startup -> world load
 
-1. `MinecraftServer` reads `level.dat` → decodes `WorldGenSettings` (codec).
+1. `MinecraftServer` reads `level.dat` -> decodes `WorldGenSettings` (codec).
 2. For each dimension, builds:
-   - `BiomeSource` (usually `MultiNoiseBiomeSource`) — owns the biome → climate-parameter table.
+   - `BiomeSource` (usually `MultiNoiseBiomeSource`) — owns the biome -> climate-parameter table.
    - `ChunkGenerator` (usually `NoiseBasedChunkGenerator`) — holds `Holder<NoiseGeneratorSettings>` (`settings` field).
 3. `NoiseGeneratorSettings` (a record) holds the **un-wired** `NoiseRouter`:
    - All `DensityFunction`s reference noise via `Holder<NormalNoise.NoiseParameters>` (un-resolved) and `HolderHolder` wrappers.
@@ -66,10 +72,10 @@ Key consequence: **`router` and `sampler` capture independent wired copies** of 
 - `plugin.yml` registers Firma as a world-gen plugin.
 - `Firma.getDefaultWorldGenerator(worldName, id)` returns a `FirmaChunkGenerator` (Bukkit-side wrapper, **not** an NMS generator).
   - `id` is parsed into `GenerationMode`:
-    - `"vanilla"` / null → `VANILLA`
-    - `"void"` → `VOID`
-    - any registered pack id → `PACK` (pack cached on the generator)
-    - anything else → warning + fallback to `VANILLA`
+    - `"vanilla"` / null -> `VANILLA`
+    - `"void"` -> `VOID`
+    - any registered pack id -> `PACK` (pack cached on the generator)
+    - anything else -> warning + fail to parse.
 - Paper wraps `FirmaChunkGenerator` inside `org.bukkit.craftbukkit.generator.CustomChunkGenerator`, which itself wraps a real vanilla `NoiseBasedChunkGenerator` as its `delegate`.
 
 ### 2.2 `WorldInitEvent` injection — `NMSInjectListener`
@@ -87,11 +93,11 @@ Steps:
 
 #### `PACK` mode (the interesting case)
 - Read `randomState = serverWorld.getChunkSource().randomState()`.
-- Take the **wired** router via `randomState.router()` (NOT `settings.noiseRouter()` — that one is un-wired and would yield broken aquifer/fluid noise → "world full of water" bug).
+- Take the **wired** router via `randomState.router()` (NOT `settings.noiseRouter()` — that one is un-wired and would yield broken aquifer/fluid noise -> "world full of water" bug).
 - Build a new `NoiseRouter` via `FirmaNoiseRouter.patchClimateFunctions(wiredRouter, randomState, seed, pack)`:
   - For each of the 5 configurable climate parameters (`temperature`, `humidity` (vanilla `vegetation`), `continentalness` (`continents`), `erosion`, `weirdness` (`ridges`)):
-    - If `pack.hasClimateConfig(param)` → `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / etc.).
-    - Otherwise → pass through the **wired vanilla function** unchanged (no wrapper, no `Identity` — avoids per-call `SinglePointContext` allocation).
+    - If `pack.hasClimateConfig(param)` -> `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / etc.).
+    - Otherwise -> pass through the **wired vanilla function** unchanged (no wrapper, no `Identity` — avoids per-call `SinglePointContext` allocation).
   - **Terrain-shape fields are rebuilt** from patched climate functions (see §2.4):
     - `depth` = `yClampedGradient(-64, 320, 1.5, -1.5) + rebuiltOffset` (derived, not pack-configurable)
     - `initialDensityWithoutJaggedness` = `slideOverworld(amplified, add(noiseGradientDensity(cache2d(rebuiltFactor), rebuiltDepth), constant(-0.703125)).clamp(-64, 64))`
@@ -103,7 +109,7 @@ Steps:
 
 #### `Climate.Sampler` patch
 - `RandomState.sampler` is built once from the *original* vanilla climate functions in `RandomState`'s constructor and captured independently from `router`. `MultiNoiseBiomeSource` reads from `sampler` (not `router`) for biome lookups, so patching only the router would leave biome placement using vanilla climate.
-- After patching `router`, we build a new `Climate.Sampler(patchedRouter.temperature().mapAll(visitor), ..., settings.spawnTarget())` and reflect-set `RandomState.sampler`. The visitor mirrors vanilla's: unwraps `DensityFunctions.HolderHolder` → inner value, `DensityFunctions.Marker` → wrapped function; everything else (including our custom climate funcs) passes through unchanged.
+- After patching `router`, we build a new `Climate.Sampler(patchedRouter.temperature().mapAll(visitor), ..., settings.spawnTarget())` and reflect-set `RandomState.sampler`. The visitor mirrors vanilla's: unwraps `DensityFunctions.HolderHolder` -> inner value, `DensityFunctions.Marker` -> wrapped function; everything else (including our custom climate funcs) passes through unchanged.
 - `settings.spawnTarget()` is read from the unchanged `NoiseGeneratorSettings` (we never mutate `settings`).
 
 5. **Always** (regardless of mode): wrap the unwrapped vanilla generator in `NMSChunkGeneratorDelegate(vanilla, isVoidMode)` and reflectively replace `ChunkMap.worldGenContext.generator` with it (via `Reflection.CHUNKMAP`).
@@ -233,7 +239,7 @@ Vanilla's `finalDensity` pipeline includes noise caves (spaghetti, cheese, noodl
   4. `rebuildSpaghettiRoughness(noisesGetter)` - roughness modifier
   5. `rebuildPillars(noisesGetter)` - pillar caves
   6. `rebuildUnderground(slopedCheese, ...)` - compose cheese + spaghetti + pillars
-- Then compose: `rangeChoice(slopedCheese, -1000000, 1.5625, min(slopedCheese, mul(5.0, entrances)), underground)` → `slideOverworld` → `postProcess` → `min(..., noodle)`
+- Then compose: `rangeChoice(slopedCheese, -1000000, 1.5625, min(slopedCheese, mul(5.0, entrances)), underground)` -> `slideOverworld` -> `postProcess` -> `min(..., noodle)`
 
 **Additional considerations:**
 - **Aquifer consistency**: Vanilla `Aquifer` reads `noiseRouter.erosion()` and `noiseRouter.depth()` directly. Our rebuilt `depth` is now in the router, so aquifers should see consistent values.
