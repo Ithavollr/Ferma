@@ -96,22 +96,28 @@ public class FirmaNoiseRouter {
         DensityFunctions.Spline.Coordinate ridgesFoldedCoord = new DensityFunctions.Spline.Coordinate(Holder.direct(ridgesFolded));
         
         // Build offset spline using vanilla's TerrainProvider logic
+        // Vanilla wraps in splineWithBlending(add(GLOBAL_OFFSET, spline), blendOffset())
         CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> offsetSpline = 
             TerrainProvider.overworldOffset(continentsCoord, erosionCoord, ridgesFoldedCoord, amplified);
-        DensityFunction offset = DensityFunctions.add(
+        DensityFunction offsetRaw = DensityFunctions.add(
             DensityFunctions.constant(-0.50375F), // GLOBAL_OFFSET
             DensityFunctions.spline(offsetSpline)
         );
+        DensityFunction offset = splineWithBlending(offsetRaw, DensityFunctions.blendOffset());
         
         // Build factor spline using vanilla's TerrainProvider logic
+        // Vanilla wraps in splineWithBlending(spline, constant(10.0))
         CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> factorSpline = 
             TerrainProvider.overworldFactor(continentsCoord, erosionCoord, ridgesCoord, ridgesFoldedCoord, amplified);
-        DensityFunction factor = DensityFunctions.spline(factorSpline);
+        DensityFunction factorRaw = DensityFunctions.spline(factorSpline);
+        DensityFunction factor = splineWithBlending(factorRaw, DensityFunctions.constant(10.0));
         
         // Build jaggedness spline using vanilla's TerrainProvider logic
+        // Vanilla wraps in splineWithBlending(spline, zero())
         CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> jaggednessSpline = 
             TerrainProvider.overworldJaggedness(continentsCoord, erosionCoord, ridgesCoord, ridgesFoldedCoord, amplified);
-        DensityFunction jaggedness = DensityFunctions.spline(jaggednessSpline);
+        DensityFunction jaggednessRaw = DensityFunctions.spline(jaggednessSpline);
+        DensityFunction jaggedness = splineWithBlending(jaggednessRaw, DensityFunctions.zero());
         
         // Build depth as yClampedGradient + offset, matching vanilla
         DensityFunction depth = DensityFunctions.add(
@@ -190,14 +196,26 @@ public class FirmaNoiseRouter {
             throw new RuntimeException("Failed to access RandomState.noises field", e);
         }
         
+        // Create wired jagged noise - we need to instantiate the NormalNoise, not just hold the parameters
+        // Vanilla wires this via NoiseWiringHelper.visitNoise() which calls randomState.getOrCreateNoise()
         Holder<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters> jaggedHolder = noisesGetter.getOrThrow(Noises.JAGGED);
-        DensityFunction jaggedNoise = DensityFunctions.noise(jaggedHolder, 1500.0, 0.0);
+        net.minecraft.world.level.levelgen.synth.NormalNoise jaggedNoiseInstance = randomState.getOrCreateNoise(Noises.JAGGED);
+        DensityFunction.NoiseHolder wiredJaggedHolder = new DensityFunction.NoiseHolder(jaggedHolder, jaggedNoiseInstance);
+        DensityFunction jaggedNoise = new DensityFunctions.Noise(wiredJaggedHolder, 1500.0, 0.0);
         
         // Get BASE_3D_NOISE_OVERWORLD - vanilla uses: BlendedNoise.createUnseeded(0.25, 0.125, 80.0, 160.0, 8.0)
-        // then wires it with the terrain random source
-        RandomSource terrainRandom = randomState.getOrCreateRandomFactory(
-            ResourceLocation.withDefaultNamespace("terrain")
-        ).at(0, 0, 0);
+        // then wires it with the terrain random source via RandomState.random.fromHashOf("minecraft:terrain")
+        // We must access RandomState.random (PositionalRandomFactory) via reflection to match vanilla's seeding
+        RandomSource terrainRandom;
+        try {
+            java.lang.reflect.Field randomField = RandomState.class.getDeclaredField("random");
+            randomField.setAccessible(true);
+            net.minecraft.world.level.levelgen.PositionalRandomFactory randomFactory = 
+                (net.minecraft.world.level.levelgen.PositionalRandomFactory) randomField.get(randomState);
+            terrainRandom = randomFactory.fromHashOf(ResourceLocation.withDefaultNamespace("terrain"));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to access RandomState.random field", e);
+        }
         DensityFunction base3dNoise = BlendedNoise.createUnseeded(
             0.25, 0.125, 80.0, 160.0, 8.0
         ).withNewRandom(terrainRandom);
@@ -236,6 +254,15 @@ public class FirmaNoiseRouter {
     }
     
     /**
+     * Vanilla's splineWithBlending function from NoiseRouterData.
+     * Returns: flatCache(cache2d(lerp(blendAlpha(), blendValue, splineValue)))
+     */
+    private static DensityFunction splineWithBlending(DensityFunction splineValue, DensityFunction blendValue) {
+        DensityFunction lerped = DensityFunctions.lerp(DensityFunctions.blendAlpha(), blendValue, splineValue);
+        return DensityFunctions.flatCache(DensityFunctions.cache2d(lerped));
+    }
+    
+    /**
      * Vanilla's postProcess function.
      * Returns: mul(interpolated(blendDensity(densityFunction)), constant(0.64)).squeeze()
      */
@@ -264,6 +291,7 @@ public class FirmaNoiseRouter {
     
     /**
      * Vanilla's slide function for terrain density modification.
+     * Uses DensityFunctions.lerp() exactly as vanilla does in NoiseRouterData.slide().
      */
     private static DensityFunction slide(
         DensityFunction input,
@@ -276,29 +304,20 @@ public class FirmaNoiseRouter {
         int bottomEndOffset,
         double bottomDelta
     ) {
-        DensityFunction topSlide = DensityFunctions.yClampedGradient(
+        DensityFunction topGradient = DensityFunctions.yClampedGradient(
             minY + height - topStartOffset,
             minY + height - topEndOffset,
             1.0,
             0.0
         );
-        DensityFunction topAdjustment = DensityFunctions.add(
-            DensityFunctions.constant(topDelta),
-            DensityFunctions.mul(DensityFunctions.constant(-topDelta), topSlide)
-        );
-        
-        DensityFunction bottomSlide = DensityFunctions.yClampedGradient(
+        DensityFunction afterTopSlide = DensityFunctions.lerp(topGradient, topDelta, input);
+        DensityFunction bottomGradient = DensityFunctions.yClampedGradient(
             minY + bottomStartOffset,
             minY + bottomEndOffset,
             0.0,
             1.0
         );
-        DensityFunction bottomAdjustment = DensityFunctions.add(
-            DensityFunctions.constant(bottomDelta),
-            DensityFunctions.mul(DensityFunctions.constant(-bottomDelta), bottomSlide)
-        );
-        
-        return DensityFunctions.add(input, DensityFunctions.max(topAdjustment, bottomAdjustment));
+        return DensityFunctions.lerp(bottomGradient, bottomDelta, afterTopSlide);
     }
     
     /**

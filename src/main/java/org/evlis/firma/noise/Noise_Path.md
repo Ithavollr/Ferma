@@ -16,7 +16,10 @@ and resolves each holder against the registry, creates a real noise sampler, rep
 to `NoiseGeneratorSettings`). `NoiseRouter` exists inside `NoiseGeneratorSettings` (`NoiseRouter.CODEC.fieldOf("noise_router")`), so every codec inside NoiseRouter (there are 15, and they are all `DensityFunction` codecs) must be 
 preserved for serialization in order to never break `level.dat`. Firma avoids ever neading to deal with codec serialization by never modifying `NoiseGeneratorSettings`, only touching `RandomState` fields that are rebuilt every startup. 
 If code is ever added that tries to serialize a Firma `RandomState`, it will run into an instance of `UnserializableMapCodec` and crash out, instead of writing `{}` and corrupting `level.dat`.
-EDIT THIS: - **Wrapping** (in this doc): one `DensityFunction` holding another and forwarding calls to it (e.g. `FirmaClimateFunction.Identity` wraps a vanilla function). Wrapping has cost: every `compute(FunctionContext)` typically allocates a `SinglePointContext` per call, which is brutal on hot paths like `finalDensity` (called millions of times per chunk). We avoid wrapping anything we don't actively transform.
+- **Wrapping**: one `DensityFunction` holding another and forwarding calls to it (e.g. `FirmaClimateFunction.Identity` wraps a vanilla function). The concern with wrapping on hot paths like `finalDensity` 
+(sampled millions of times per chunk) is not raw allocation cost — `SinglePointContext` is a trivial 3-int record — but that wrappers can bypass `NoiseChunk`'s caching and interpolation infrastructure. 
+During normal chunk generation, `NoiseChunk` provides a `FunctionContext` that tracks cell positions and caches intermediate results across the density function tree. If a wrapper calls `compute()` on its inner function 
+with a bare `SinglePointContext` instead, that inner function re-evaluates from scratch on every call, losing all caching benefits. We avoid wrapping anything we don't actively transform to keep the normal `NoiseChunk` evaluation path intact.
 
 ---
 
