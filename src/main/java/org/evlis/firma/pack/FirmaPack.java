@@ -16,6 +16,7 @@ public record FirmaPack(
     String id,
     String name,
     String description,
+    String type,
     Map<String, ClimateFunctionConfig> climate,
     @Nullable VoidPalette voidPalette
 ) {
@@ -75,6 +76,6 @@ public record FirmaPack(
      * Create a passthrough pack (all identity).
      */
     public static FirmaPack passthrough() {
-        return new FirmaPack(1, "passthrough", "Passthrough", "Bit-identical vanilla climate", Collections.emptyMap(), null);
+        return new FirmaPack(1, "passthrough", "Passthrough", "Bit-identical vanilla climate", "noise", Collections.emptyMap(), null);
     }
 }

@@ -2,11 +2,12 @@
 # Demonstrates a world with always-cold temperature and vanilla everything else
 
 schema_version: 1
-id: frozen_world
-name: "Frozen World"
-description: "Always-cold temperature (-1.0), vanilla everything else"
+id: desert_world
+name: "Desert World"
+description: "Always-hot temperature (+1.0), vanilla everything else"
+type: noise
 
 climate:
   temperature:
     type: constant
-    value: -1.0
+    value: 1.0

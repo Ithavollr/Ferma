@@ -12,6 +12,7 @@ schema_version: 1
 id: custom_noise
 name: "Custom Noise"
 description: "Custom noise-based climate (similar to vanilla but with custom parameters)"
+type: noise
 
 climate:
   temperature:

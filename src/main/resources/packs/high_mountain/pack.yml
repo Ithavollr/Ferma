@@ -2,6 +2,7 @@ schema_version: 1
 id: high_mountain
 name: "High Mountain"
 description: "A world that is all mountain near the origin, with the terrain dropping off radially and becoming deep ocean far from spawn."
+type: noise
 
 climate:
   continentalness:

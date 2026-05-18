@@ -85,6 +85,10 @@ public class FirmaChunkGenerator extends ChunkGenerator {
             default -> {
                 // Check if it's a pack id
                 if (plugin.hasPack(modeId)) {
+                    FirmaPack pack = plugin.getPack(modeId);
+                    if (pack != null && "void".equals(pack.type())) {
+                        yield GenerationMode.VOID;
+                    }
                     yield GenerationMode.PACK;
                 }
                 // Fail loudly - getDefaultWorldGenerator should have caught this already.

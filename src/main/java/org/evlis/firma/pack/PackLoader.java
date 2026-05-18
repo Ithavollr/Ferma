@@ -117,8 +117,15 @@ public class PackLoader {
                 id = packId;
             }
             
-            // Determine pack type (void or normal climate pack)
-            String type = (String) data.getOrDefault("type", "pack");
+            // Validate required type field
+            Object typeObj = data.get("type");
+            if (typeObj == null) {
+                throw new IllegalArgumentException("Pack '" + packId + "' is missing required 'type' field (must be 'noise' or 'void')");
+            }
+            String type = typeObj.toString();
+            if (!"noise".equals(type) && !"void".equals(type)) {
+                throw new IllegalArgumentException("Pack '" + packId + "' has unknown type: '" + type + "' (must be 'noise' or 'void')");
+            }
 
             VoidPalette voidPalette = null;
             Map<String, ClimateFunctionConfig> climate = new HashMap<>();
@@ -162,7 +169,7 @@ public class PackLoader {
                 }
             }
 
-            return new FirmaPack(schemaVersion, id, name, description, climate, voidPalette);
+            return new FirmaPack(schemaVersion, id, name, description, type, climate, voidPalette);
         }
     }
     

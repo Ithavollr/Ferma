@@ -5,7 +5,7 @@ plugins {
     id("java-library")
     id("io.papermc.paperweight.userdev") version "2.0.0-beta.14"
     id("xyz.jpenilla.run-paper") version "3.0.2"
-    id("com.gradleup.shadow") version "9.0.0-beta4"
+    id("com.gradleup.shadow") version "9.4.1"
 }
 
 repositories {
@@ -46,8 +46,7 @@ tasks {
     }
 
     shadowJar {
-        archiveClassifier.set("")
-        archiveFileName.set("Firma-${project.version}.jar")
+        archiveClassifier.set("all")
     }
 
     test {
