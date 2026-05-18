@@ -47,7 +47,7 @@ public sealed interface ClimateFunctionConfig {
     /**
      * Double Perlin noise (two octaves with offset for grid artifact masking).
      */
-    record DoublePerlin(int firstOctave, List<Double> amplitudes, double xzScale, double yScale) 
+    record DoublePerlin(int firstOctave, List<Double> amplitudes, double xzScale, double yScale, double minValue, double maxValue) 
             implements ClimateFunctionConfig {
         @Override
         public String type() { return "double_perlin"; }

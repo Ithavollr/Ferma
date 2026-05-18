@@ -85,6 +85,7 @@ tasks.register<RunServer>("runServerInteractive_1-21-4") {
     minecraftVersion("1.21.4")
     downloadPlugins {
         hangar("Multiverse-Core", "5.6.1")
+        hangar("Chunky", "1.4.40")
         modrinth("squaremap", "1.3.4")
         modrinth("simple-fly", "0.0.1")
     }

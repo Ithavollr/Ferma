@@ -171,13 +171,15 @@ public class PackLoader {
                 List<Double> amplitudes = parseAmplitudes(config.get("amplitudes"));
                 double xzScale = ((Number) config.getOrDefault("xz_scale", 1.0)).doubleValue();
                 double yScale = ((Number) config.getOrDefault("y_scale", 1.0)).doubleValue();
-                yield new ClimateFunctionConfig.DoublePerlin(firstOctave, amplitudes, xzScale, yScale);
+                double minValue = ((Number) config.getOrDefault("min_value", -1.0)).doubleValue();
+                double maxValue = ((Number) config.getOrDefault("max_value", 1.0)).doubleValue();
+                yield new ClimateFunctionConfig.DoublePerlin(firstOctave, amplitudes, xzScale, yScale, minValue, maxValue);
             }
             case "shifted_noise" -> {
                 // Parse inner noise config
                 Map<String, Object> innerMap = (Map<String, Object>) config.get("inner");
                 ClimateFunctionConfig inner = innerMap != null ? parseClimateConfig(innerMap) : 
-                    new ClimateFunctionConfig.DoublePerlin(-7, List.of(1.0, 1.0), 0.25, 0.0);
+                    new ClimateFunctionConfig.DoublePerlin(-7, List.of(1.0, 1.0), 0.25, 0.0, -1.0, 1.0);
                 
                 // Parse shift configs
                 Map<String, Object> shiftXMap = (Map<String, Object>) config.get("shift_x");

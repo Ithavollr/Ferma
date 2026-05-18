@@ -83,8 +83,8 @@ public class ClimateFunctionFactory {
             amplitudes,
             config.xzScale(),
             config.yScale(),
-            -1.0, // minValue
-            1.0   // maxValue
+            config.minValue(),
+            config.maxValue()
         );
     }
     

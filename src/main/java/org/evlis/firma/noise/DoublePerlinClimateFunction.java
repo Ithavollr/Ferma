@@ -48,11 +48,13 @@ public class DoublePerlinClimateFunction implements FirmaClimateFunction {
         double shiftZ = this.shiftZSampler.sample(x, y, z) * 4.0;
         
         // Sample main noise at shifted position
-        return this.mainSampler.sample(
+        double raw = this.mainSampler.sample(
             x * this.xzScale + shiftX,
             y * this.yScale,
             z * this.xzScale + shiftZ
         );
+
+        return Math.clamp(raw, this.minValue, this.maxValue);
     }
     
     @Override
