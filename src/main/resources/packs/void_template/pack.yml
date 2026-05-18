@@ -1,0 +1,36 @@
+# Void Pack Template
+# Demonstrates a void world with specific block placements at world coordinates
+#
+# Void packs use type: void and define a palette of blocks at specific coordinates.
+# Each palette entry maps a world coordinate [x, y, z] to a block resource location.
+#
+# Coordinate format: "[x, y, z]" (as a string key)
+# - x, z: any integer (world coordinates)
+# - y: must be in range [-64, 320]
+#
+# Block ID format: "namespace:path" (e.g., "minecraft:bedrock")
+# - Must match pattern: [a-z0-9_]+:[a-z0-9_/]+
+
+schema_version: 1
+id: void_template
+name: "Void Template"
+description: "A void world with a small platform at spawn"
+type: void
+
+palette:
+  # Create a 3x3 bedrock platform at y=-64 (bottom of world)
+  "[0, -64, 0]": "minecraft:bedrock"
+  "[1, -64, 0]": "minecraft:bedrock"
+  "[-1, -64, 0]": "minecraft:bedrock"
+  "[0, -64, 1]": "minecraft:bedrock"
+  "[0, -64, -1]": "minecraft:bedrock"
+  "[1, -64, 1]": "minecraft:bedrock"
+  "[1, -64, -1]": "minecraft:bedrock"
+  "[-1, -64, 1]": "minecraft:bedrock"
+  "[-1, -64, -1]": "minecraft:bedrock"
+  
+  # Add a single grass block at spawn level for visibility
+  "[0, 64, 0]": "minecraft:grass_block"
+  
+  # Example: Place a diamond block far away
+  "[1000, 100, 2000]": "minecraft:diamond_block"

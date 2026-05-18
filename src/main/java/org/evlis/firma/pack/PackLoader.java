@@ -93,6 +93,19 @@ public class PackLoader {
                 return null;
             }
             
+            // Validate schema version first
+            Object schemaVersionObj = data.get("schema_version");
+            if (schemaVersionObj == null) {
+                throw new IllegalArgumentException("Pack '" + packId + "' is missing required 'schema_version' field");
+            }
+            if (!(schemaVersionObj instanceof Integer)) {
+                throw new IllegalArgumentException("Pack '" + packId + "' has invalid schema_version (must be an integer): " + schemaVersionObj);
+            }
+            int schemaVersion = (Integer) schemaVersionObj;
+            if (schemaVersion != 1) {
+                throw new IllegalArgumentException("Pack '" + packId + "' has unsupported schema_version: " + schemaVersion + " (only version 1 is supported)");
+            }
+            
             // Extract metadata
             String id = (String) data.getOrDefault("id", packId);
             String name = (String) data.getOrDefault("name", packId);
@@ -149,7 +162,7 @@ public class PackLoader {
                 }
             }
 
-            return new FirmaPack(id, name, description, climate, voidPalette);
+            return new FirmaPack(schemaVersion, id, name, description, climate, voidPalette);
         }
     }
     

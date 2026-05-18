@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
  * Packs are loaded from plugins/Firma/packs/<pack_id>/pack.yml
  */
 public record FirmaPack(
+    int schemaVersion,
     String id,
     String name,
     String description,
@@ -74,6 +75,6 @@ public record FirmaPack(
      * Create a passthrough pack (all identity).
      */
     public static FirmaPack passthrough() {
-        return new FirmaPack("passthrough", "Passthrough", "Bit-identical vanilla climate", Collections.emptyMap(), null);
+        return new FirmaPack(1, "passthrough", "Passthrough", "Bit-identical vanilla climate", Collections.emptyMap(), null);
     }
 }

@@ -8,7 +8,7 @@
 #  Weirdness        -3.111	    3.111
 #  Depth            -1.5	    1.5
 
-
+schema_version: 1
 id: custom_noise
 name: "Custom Noise"
 description: "Custom noise-based climate (similar to vanilla but with custom parameters)"
