@@ -1,6 +1,6 @@
 <img src="https://codeberg.org/Ifiht/Firma/raw/branch/main/logo.png" width="109" height="109">
 
-# Firma
+# Ferma
 
 A Minecraft Paper 1.21.4 world generation plugin that provides a minimal injection point into vanilla chunk generation.
 
