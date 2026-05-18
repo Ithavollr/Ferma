@@ -35,7 +35,7 @@ public class FirmaChunkGenerator extends ChunkGenerator {
         PACK
     }
 
-    private final Firma plugin;
+    private final Ferma plugin;
     private final GenerationMode mode;
     private final String packId;
     private FirmaPack cachedPack;
@@ -47,7 +47,7 @@ public class FirmaChunkGenerator extends ChunkGenerator {
      * @param plugin The plugin instance
      * @param modeId The generation mode string ("vanilla", "void", or pack id), or null for default
      */
-    public FirmaChunkGenerator(Firma plugin, @Nullable String modeId) {
+    public FirmaChunkGenerator(Ferma plugin, @Nullable String modeId) {
         this.plugin = plugin;
         this.packId = modeId;
         this.mode = parseMode(modeId);

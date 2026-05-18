@@ -12,7 +12,7 @@ import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.WorldInitEvent;
-import org.evlis.firma.Firma;
+import org.evlis.firma.Ferma;
 import org.evlis.firma.FirmaChunkGenerator;
 import org.evlis.firma.FirmaChunkGenerator.GenerationMode;
 import org.evlis.firma.Reflection;
@@ -30,11 +30,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * This is the core injection mechanism that allows us to intercept and potentially modify vanilla generation.
  */
 public class NMSInjectListener implements Listener {
-    private final Firma plugin;
+    private final Ferma plugin;
     // Thread-safe set for tracking injected worlds (concurrent world initialization)
     private final Set<World> injectedWorlds = ConcurrentHashMap.newKeySet();
 
-    public NMSInjectListener(Firma plugin) {
+    public NMSInjectListener(Ferma plugin) {
         this.plugin = plugin;
     }
 

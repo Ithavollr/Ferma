@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>No mocking - every class under test is a real Firma class operating on real
  * Mojang DataFixerUpper APIs.
  */
-class FirmaDensityFunctionCodecGuardTest {
+class FermaDensityFunctionCodecGuardTest {
 
     /**
      * NMS classes touch {@code BuiltInRegistries} during their static init, which

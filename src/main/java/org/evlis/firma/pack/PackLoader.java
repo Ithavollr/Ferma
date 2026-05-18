@@ -1,13 +1,11 @@
 package org.evlis.firma.pack;
 
-import org.bukkit.plugin.Plugin;
-import org.evlis.firma.Firma;
+import org.evlis.firma.Ferma;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -20,11 +18,11 @@ import java.util.logging.Logger;
  */
 public class PackLoader {
     
-    private final Firma plugin;
+    private final Ferma plugin;
     private final Logger logger;
     private final Yaml yaml;
     
-    public PackLoader(Firma plugin) {
+    public PackLoader(Ferma plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.yaml = new Yaml();

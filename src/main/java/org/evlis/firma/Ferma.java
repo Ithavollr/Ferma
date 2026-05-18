@@ -13,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public final class Firma extends JavaPlugin {
+public final class Ferma extends JavaPlugin {
     // Thread-safe map for concurrent world initialization
     private final Map<String, FirmaChunkGenerator> generatorMap = new ConcurrentHashMap<>();
     // Loaded packs (id -> pack)

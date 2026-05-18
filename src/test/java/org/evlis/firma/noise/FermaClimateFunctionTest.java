@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>Double perlin respects bounds and is deterministic</li>
  * </ul>
  */
-class FirmaClimateFunctionTest {
+class FermaClimateFunctionTest {
 
     @BeforeAll
     static void bootstrapNms() {
