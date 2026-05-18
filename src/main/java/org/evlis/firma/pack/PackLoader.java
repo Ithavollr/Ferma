@@ -104,38 +104,132 @@ public class PackLoader {
                 id = packId;
             }
             
-            // Parse climate section
+            // Determine pack type (void or normal climate pack)
+            String type = (String) data.getOrDefault("type", "pack");
+
+            VoidPalette voidPalette = null;
             Map<String, ClimateFunctionConfig> climate = new HashMap<>();
-            Object climateObj = data.get("climate");
-            if (climateObj instanceof Map) {
-                Map<String, Object> climateMap = (Map<String, Object>) climateObj;
-                // Valid climate parameters (depth is not configurable - it's always derived)
-                Set<String> validParams = Set.of("temperature", "humidity", "continentalness", "erosion", "weirdness");
-                
-                for (Map.Entry<String, Object> entry : climateMap.entrySet()) {
-                    String param = entry.getKey();
-                    Object configObj = entry.getValue();
-                    
-                    // Validate parameter name
-                    if (!validParams.contains(param)) {
-                        throw new IllegalArgumentException("Unknown climate parameter '" + param + "' in pack '" + packId + "'. Valid parameters are: " + validParams);
-                    }
-                    
-                    if (configObj instanceof Map) {
-                        try {
-                            ClimateFunctionConfig config = parseClimateConfig((Map<String, Object>) configObj);
-                            climate.put(param, config);
-                        } catch (Exception e) {
-                            throw new IllegalArgumentException("Failed to parse climate config for '" + param + "' in pack '" + packId + "': " + e.getMessage(), e);
+
+            if ("void".equals(type)) {
+                // Parse void palette
+                Object paletteObj = data.get("palette");
+                if (paletteObj instanceof Map) {
+                    Map<String, Object> paletteMap = (Map<String, Object>) paletteObj;
+                    voidPalette = parseVoidPalette(paletteMap, packId);
+                } else if (paletteObj != null) {
+                    logger.warning("Pack '" + packId + "' has type: void but palette is not a map - ignoring");
+                }
+                // Void packs don't have climate section
+            } else {
+                // Parse climate section for normal packs
+                Object climateObj = data.get("climate");
+                if (climateObj instanceof Map) {
+                    Map<String, Object> climateMap = (Map<String, Object>) climateObj;
+                    // Valid climate parameters (depth is not configurable - it's always derived)
+                    Set<String> validParams = Set.of("temperature", "humidity", "continentalness", "erosion", "weirdness");
+
+                    for (Map.Entry<String, Object> entry : climateMap.entrySet()) {
+                        String param = entry.getKey();
+                        Object configObj = entry.getValue();
+
+                        // Validate parameter name
+                        if (!validParams.contains(param)) {
+                            throw new IllegalArgumentException("Unknown climate parameter '" + param + "' in pack '" + packId + "'. Valid parameters are: " + validParams);
+                        }
+
+                        if (configObj instanceof Map) {
+                            try {
+                                ClimateFunctionConfig config = parseClimateConfig((Map<String, Object>) configObj);
+                                climate.put(param, config);
+                            } catch (Exception e) {
+                                throw new IllegalArgumentException("Failed to parse climate config for '" + param + "' in pack '" + packId + "': " + e.getMessage(), e);
+                            }
                         }
                     }
                 }
             }
-            
-            return new FirmaPack(id, name, description, climate);
+
+            return new FirmaPack(id, name, description, climate, voidPalette);
         }
     }
     
+    /**
+     * Parse a void palette from YAML map.
+     * Keys are "[x, y, z]" strings, values are block resource locations.
+     */
+    private VoidPalette parseVoidPalette(Map<String, Object> paletteMap, String packId) {
+        List<PaletteEntry> entries = new ArrayList<>();
+
+        for (Map.Entry<String, Object> entry : paletteMap.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+
+            // Parse the key as [x, y, z]
+            int[] coords = parseCoordinateKey(key, packId);
+            if (coords == null) {
+                logger.warning("Pack '" + packId + "' has invalid palette key: '" + key + "' - skipping");
+                continue;
+            }
+
+            int x = coords[0];
+            int y = coords[1];
+            int z = coords[2];
+
+            // Validate y coordinate
+            if (y < -64 || y > 320) {
+                logger.warning("Pack '" + packId + "' has palette entry with y=" + y + " outside valid range [-64, 320] - skipping");
+                continue;
+            }
+
+            // Parse the block ID
+            String blockId = value instanceof String ? (String) value : null;
+            if (blockId == null || !isValidBlockId(blockId)) {
+                logger.warning("Pack '" + packId + "' has invalid block id: '" + value + "' for key '" + key + "' - skipping");
+                continue;
+            }
+
+            entries.add(new PaletteEntry(x, y, z, blockId));
+        }
+
+        return VoidPalette.fromEntries(entries);
+    }
+
+    /**
+     * Parse a coordinate key in the format "[x, y, z]".
+     * Returns int[3] with {x, y, z} or null if invalid.
+     */
+    private int[] parseCoordinateKey(String key, String packId) {
+        // Remove brackets and whitespace
+        String trimmed = key.trim();
+        if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+            return null;
+        }
+
+        String inner = trimmed.substring(1, trimmed.length() - 1).trim();
+        String[] parts = inner.split(",");
+
+        if (parts.length != 3) {
+            return null;
+        }
+
+        try {
+            int x = Integer.parseInt(parts[0].trim());
+            int y = Integer.parseInt(parts[1].trim());
+            int z = Integer.parseInt(parts[2].trim());
+            return new int[]{x, y, z};
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Validate a block ID matches the expected resource location format.
+     * Format: [a-z0-9_]+:[a-z0-9_/]+
+     */
+    private boolean isValidBlockId(String blockId) {
+        return blockId != null && blockId.matches("^[a-z0-9_]+:[a-z0-9_/]+$");
+    }
+
     /**
      * Parse a climate function configuration from YAML map.
      */

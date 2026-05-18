@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import org.jetbrains.annotations.Nullable;
+
 /**
  * A parsed Firma pack containing climate function configurations.
  * Packs are loaded from plugins/Firma/packs/<pack_id>/pack.yml
@@ -13,7 +15,8 @@ public record FirmaPack(
     String id,
     String name,
     String description,
-    Map<String, ClimateFunctionConfig> climate
+    Map<String, ClimateFunctionConfig> climate,
+    @Nullable VoidPalette voidPalette
 ) {
     
     /**
@@ -43,6 +46,7 @@ public record FirmaPack(
             // Make immutable copy
             climate = Collections.unmodifiableMap(new HashMap<>(climate));
         }
+        // voidPalette can be null (for non-void packs or void packs without a palette)
     }
     
     /**
@@ -70,6 +74,6 @@ public record FirmaPack(
      * Create a passthrough pack (all identity).
      */
     public static FirmaPack passthrough() {
-        return new FirmaPack("passthrough", "Passthrough", "Bit-identical vanilla climate", Collections.emptyMap());
+        return new FirmaPack("passthrough", "Passthrough", "Bit-identical vanilla climate", Collections.emptyMap(), null);
     }
 }
