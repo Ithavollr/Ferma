@@ -4,21 +4,16 @@ A Minecraft Paper 1.21.4 world generation plugin that provides a minimal injecti
 
 ## Purpose
 
-Firma re-implements Terra's NMS injection mechanism to intercept the world generation pipeline at the chunk generator level. Currently, it acts as a **no-op pass-through** - all generation is delegated entirely to vanilla, producing faithful vanilla worlds.
+Firma takes inspiration from Terra's NMS injection mechanism to intercept the world generation pipeline at the chunk generator level. Current fetures:
 
-This serves as a foundation for future modifications to the 6 critical climate noise functions (temperature, humidity, continentalness, erosion, weirdness, depth) while leaving all other generation to the vanilla server.
+- Void world generation
+- Vanilla world generation
+- Custom world generation with tunable climate parameters including:
+  - `[temperature, humidity, continentalness, erosion, weirdness]`
 
 ## Usage
 
-Add the following to your `bukkit.yml` or Paper world configuration:
-
-```yaml
-worlds:
-  your_world_name:
-    generator: Firma
-```
-
-Or use the generator ID with the `/createworld` command or any world management plugin.
+To get started with Multiverse: `mv create <world_name> normal --generator Firma:void`
 
 ## Architecture
 
@@ -33,7 +28,7 @@ Or use the generator ID with the `/createworld` command or any world management 
 ./gradlew build shadowJar
 ```
 
-The plugin JAR will be in `build/libs/Firma-<version>.jar`
+The plugin JAR will be in `build/libs/Firma-<version>-all.jar`
 
 ## Running
 
