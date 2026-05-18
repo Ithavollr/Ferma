@@ -76,28 +76,28 @@ public class FirmaChunkGenerator extends ChunkGenerator {
      * Defaults to searching packs and failing if no match is found.
      */
     private GenerationMode parseMode(@Nullable String modeId) {
+        // Special pass-through case, more of a test than any functional use. Should work as a no-op
         if (modeId == null || modeId.isEmpty()) {
             return GenerationMode.VANILLA;
         }
-        return switch (modeId.toLowerCase()) {
-            case "vanilla" -> GenerationMode.VANILLA;
+        String id = modeId.toLowerCase();
+        if (!plugin.hasPack(id)) {
+            throw new IllegalArgumentException(
+                "Unknown Ferma pack id: '" + id + "'. World creation aborted."
+            );
+        }
+        FirmaPack pack = plugin.getPack(id);
+        if (pack == null) {
+            throw new IllegalStateException(
+                "Pack '" + id + "' registered but returned null. This should not happen."
+            );
+        }
+        return switch (pack.type()) {
             case "void" -> GenerationMode.VOID;
-            default -> {
-                // Check if it's a pack id
-                if (plugin.hasPack(modeId)) {
-                    FirmaPack pack = plugin.getPack(modeId);
-                    if (pack != null && "void".equals(pack.type())) {
-                        yield GenerationMode.VOID;
-                    }
-                    yield GenerationMode.PACK;
-                }
-                // Fail loudly - getDefaultWorldGenerator should have caught this already.
-                // Reaching here means a stale/orphaned id slipped through.
-                throw new IllegalArgumentException(
-                    "Unknown Firma generation mode or pack id: '" + modeId + "'. " +
-                    "World creation aborted."
-                );
-            }
+            case "noise" -> GenerationMode.PACK;
+            default -> throw new IllegalArgumentException(
+                "Pack '" + id + "' has unknown type: '" + pack.type() + "'. Expected 'void' or 'noise'."
+            );
         };
     }
     

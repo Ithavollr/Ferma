@@ -73,8 +73,8 @@ public final class Ferma extends JavaPlugin {
     public @Nullable ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, @Nullable String id) {
         getLogger().info("Creating Firma generator for world: " + worldName + " with id: " + id);
         
-        // Reject unknown pack ids loudly - silently falling back to vanilla would let
-        // a typo (e.g. "Firma:frozn_world") silently produce a normal world.
+        // Reject unknown pack ids loudly - silently falling back to vanilla
+        // would let a typo silently produce a normal world.
         if (id != null && !id.isEmpty() && !isReservedName(id) && !hasPack(id)) {
             getLogger().severe("Unknown Firma generator id '" + id + "' for world '" + worldName + "'.");
             getLogger().severe("Valid options: 'vanilla', 'void', or one of the loaded pack ids: " + packs.keySet());

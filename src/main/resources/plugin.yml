@@ -1,4 +1,4 @@
-name: Firma
+name: Ferma
 version: '${version}'
 
 main: org.evlis.firma.Ferma

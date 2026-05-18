@@ -12,7 +12,7 @@
 # - Must match pattern: [a-z0-9_]+:[a-z0-9_/]+
 
 schema_version: 1
-id: void
+id: void_template
 name: "Void Template"
 description: "A void world with a small platform at spawn"
 type: void
