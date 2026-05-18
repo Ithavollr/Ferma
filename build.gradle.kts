@@ -23,7 +23,6 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
     paperweight.paperDevBundle("1.21.4-R0.1-SNAPSHOT")
     implementation("xyz.jpenilla:reflection-remapper:0.1.2")
-
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -87,6 +86,7 @@ tasks.register<RunServer>("runServerInteractive_1-21-4") {
     downloadPlugins {
         hangar("Multiverse-Core", "5.6.1")
         modrinth("squaremap", "1.3.4")
+        modrinth("simple-fly", "0.0.1")
     }
     pluginJars.from(tasks.shadowJar)
     systemProperty("net.kyori.adventure.text.warnWhenLegacyFormattingDetected", "false")
