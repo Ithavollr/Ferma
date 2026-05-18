@@ -6,6 +6,7 @@ import org.bukkit.generator.BlockPopulator;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 import org.evlis.firma.pack.FirmaPack;
+import org.evlis.firma.pack.VoidPalette;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,6 +39,7 @@ public class FirmaChunkGenerator extends ChunkGenerator {
     private final GenerationMode mode;
     private final String packId;
     private FirmaPack cachedPack;
+    private final VoidPalette voidPalette;
 
     /**
      * Creates a Firma chunk generator with the specified mode.
@@ -49,7 +51,24 @@ public class FirmaChunkGenerator extends ChunkGenerator {
         this.plugin = plugin;
         this.packId = modeId;
         this.mode = parseMode(modeId);
+        this.voidPalette = loadVoidPalette(modeId);
         plugin.getLogger().info("Created Firma generator with mode: " + mode + (mode == GenerationMode.PACK ? " (pack: " + modeId + ")" : ""));
+    }
+
+    /**
+     * Load the void palette if this is a void-type pack.
+     * Returns null for vanilla, bare void keyword, or non-void packs.
+     */
+    private VoidPalette loadVoidPalette(@Nullable String modeId) {
+        if (modeId == null || modeId.isEmpty()) {
+            return null;
+        }
+        // Check if it's a pack with type: void
+        FirmaPack pack = plugin.getPack(modeId);
+        if (pack != null && pack.voidPalette() != null) {
+            return pack.voidPalette();
+        }
+        return null;
     }
 
     /**
@@ -103,6 +122,13 @@ public class FirmaChunkGenerator extends ChunkGenerator {
      */
     public @Nullable String getPackId() {
         return packId;
+    }
+
+    /**
+     * Get the void palette for this generator (only valid in VOID mode with a void pack).
+     */
+    public @Nullable VoidPalette getVoidPalette() {
+        return voidPalette;
     }
 
     /**

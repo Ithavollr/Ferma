@@ -97,8 +97,8 @@ public class VoidChunkHandler {
      * @param chunk The chunk to fill
      */
     public void fillChunk(ChunkAccess chunk) {
-        if (palette == null) {
-            return; // Empty void world
+        if (palette == null || chunk == null) {
+            return; // Empty void world or no chunk to fill
         }
 
         // Get chunk coordinates

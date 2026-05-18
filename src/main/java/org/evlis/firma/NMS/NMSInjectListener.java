@@ -18,6 +18,8 @@ import org.evlis.firma.FirmaChunkGenerator.GenerationMode;
 import org.evlis.firma.Reflection;
 import org.evlis.firma.noise.FirmaNoiseRouter;
 import org.evlis.firma.pack.FirmaPack;
+import org.evlis.firma.pack.VoidChunkHandler;
+import org.evlis.firma.pack.VoidPalette;
 
 import java.lang.reflect.Field;
 import java.util.Set;
@@ -160,11 +162,20 @@ public class NMSInjectListener implements Listener {
             // Create our delegate that wraps the (possibly patched) generator
             // For VOID mode, pass true to create empty chunks
             boolean isVoidMode = (mode == GenerationMode.VOID);
-            NMSChunkGeneratorDelegate delegate = new NMSChunkGeneratorDelegate(vanillaGenerator, isVoidMode);
-            
+
+            // Create VoidChunkHandler for void mode (handles palette if present)
+            VoidChunkHandler voidHandler = null;
             if (isVoidMode) {
-                plugin.getLogger().info("VOID mode - will generate empty chunks for world: " + world.getName());
+                VoidPalette palette = firmaGenerator.getVoidPalette();
+                voidHandler = new VoidChunkHandler(palette);
+                if (palette != null) {
+                    plugin.getLogger().info("VOID mode with palette - " + palette.entries().size() + " block(s) defined");
+                } else {
+                    plugin.getLogger().info("VOID mode - will generate empty chunks for world: " + world.getName());
+                }
             }
+
+            NMSChunkGeneratorDelegate delegate = new NMSChunkGeneratorDelegate(vanillaGenerator, isVoidMode, voidHandler);
 
             // Replace the WorldGenContext's generator with our delegate
             WorldGenContext newContext = new WorldGenContext(

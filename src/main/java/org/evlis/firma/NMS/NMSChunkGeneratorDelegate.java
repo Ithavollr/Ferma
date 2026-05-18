@@ -2,6 +2,8 @@ package org.evlis.firma.NMS;
 
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
+import org.evlis.firma.pack.VoidChunkHandler;
+import org.jetbrains.annotations.Nullable;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.NoiseColumn;
@@ -27,16 +29,22 @@ import java.util.concurrent.CompletableFuture;
 public class NMSChunkGeneratorDelegate extends ChunkGenerator {
     private final ChunkGenerator vanilla;
     private final boolean voidMode;
+    private final VoidChunkHandler voidHandler;
 
     public NMSChunkGeneratorDelegate(ChunkGenerator vanilla) {
-        this(vanilla, false);
+        this(vanilla, false, null);
     }
 
     public NMSChunkGeneratorDelegate(ChunkGenerator vanilla, boolean voidMode) {
+        this(vanilla, voidMode, null);
+    }
+
+    public NMSChunkGeneratorDelegate(ChunkGenerator vanilla, boolean voidMode, @Nullable VoidChunkHandler voidHandler) {
         // Pass the vanilla generator's biome source
         super(getBiomeSource(vanilla));
         this.vanilla = vanilla;
         this.voidMode = voidMode;
+        this.voidHandler = voidHandler != null ? voidHandler : new VoidChunkHandler(null);
     }
 
     private static BiomeSource getBiomeSource(ChunkGenerator generator) {
@@ -119,7 +127,8 @@ public class NMSChunkGeneratorDelegate extends ChunkGenerator {
                                                                   @NotNull StructureManager structureAccessor,
                                                                   @NotNull ChunkAccess chunk) {
         if (voidMode) {
-            // VOID mode: Return chunk as-is (no terrain generation)
+            // VOID mode: Apply palette blocks if present, then return
+            voidHandler.fillChunk(chunk);
             return CompletableFuture.completedFuture(chunk);
         }
         // Delegate to vanilla for terrain generation
