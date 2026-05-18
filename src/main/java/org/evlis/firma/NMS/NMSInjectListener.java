@@ -90,10 +90,12 @@ public class NMSInjectListener implements Listener {
                         // (broken aquifer/fluid noise -> world flooded with water).
                         RandomState randomState = serverWorld.getChunkSource().randomState();
                         NoiseRouter wiredRouter = randomState.router();
+                        boolean amplified = noiseGenerator.stable(net.minecraft.world.level.levelgen.NoiseGeneratorSettings.AMPLIFIED);
+                        plugin.getLogger().info("Amplified terrain: " + amplified);
                         
                         // Patch the climate functions using the pack
                         NoiseRouter patchedRouter = FirmaNoiseRouter.patchClimateFunctions(
-                            wiredRouter, randomState, serverWorld.getSeed(), pack
+                            wiredRouter, randomState, serverWorld.getSeed(), pack, amplified
                         );
                         
                         java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");

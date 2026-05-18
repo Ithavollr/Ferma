@@ -29,7 +29,8 @@ public class FirmaNoiseRouter {
     public static NoiseRouter patchClimateFunctions(NoiseRouter vanillaRouter,
                                                    RandomState randomState,
                                                    long seed,
-                                                   FirmaPack pack) {
+                                                   FirmaPack pack,
+                                                   boolean amplified) {
         ClimateFunctionFactory factory = new ClimateFunctionFactory(seed, pack.id());
         
         // Only build custom functions for parameters explicitly configured in the pack.
@@ -51,7 +52,7 @@ public class FirmaNoiseRouter {
             : vanillaRouter.ridges();
         
         // Rebuild terrain-shape fields from patched climate functions
-        TerrainInputs terrain = rebuildTerrainInputs(continents, erosion, weirdness, false, randomState);
+        TerrainInputs terrain = rebuildTerrainInputs(continents, erosion, weirdness, amplified, randomState);
         
         // Pass vanilla functions directly for non-climate fields - wrapping them in Identity
         // would cause per-call SinglePointContext allocations on hot terrain-gen paths.
