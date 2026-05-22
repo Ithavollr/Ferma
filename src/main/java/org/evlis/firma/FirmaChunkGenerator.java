@@ -19,7 +19,8 @@ import java.util.Random;
  * and carries the generation mode configuration per-world.
  *
  * For Stage 1 (VANILLA): Does not override generateNoise - let Paper/CustomChunkGenerator fall through.
- * For Stage 3 (VOID): Will override generateNoise with empty implementation.
+ * For Stage 2 (VOID): Overrides generateNoise with empty implementation.
+ * For Stage 3 (PACK): NMS injection handles custom noise routing.
  */
 public class FirmaChunkGenerator extends ChunkGenerator {
 
@@ -29,9 +30,9 @@ public class FirmaChunkGenerator extends ChunkGenerator {
     public enum GenerationMode {
         /** Faithful vanilla pass-through (Stage 1) */
         VANILLA,
-        /** Void/empty chunk mode (Stage 3) */
+        /** Void/empty chunk mode (Stage 2) */
         VOID,
-        /** Pack-based configuration (Stage 4) */
+        /** Pack-based configuration (Stage 3) */
         PACK
     }
 
@@ -141,16 +142,18 @@ public class FirmaChunkGenerator extends ChunkGenerator {
      * Stage 1 (VANILLA): Not overridden - falls through to Paper's CustomChunkGenerator,
      * which delegates to the real vanilla NoiseBasedChunkGenerator (after NMS injection).
      *
-     * Stage 3 (VOID): Will be overridden to produce empty chunks.
+     * Stage 2 (VOID): Overridden to produce empty chunks.
+     *
+     * Stage 3 (PACK): NMS injection handles custom climate noise routing.
      */
     @Override
     public void generateNoise(@NotNull WorldInfo worldInfo, @NotNull Random random, int x, int z, @NotNull ChunkData chunkData) {
         if (mode == GenerationMode.VOID) {
-            // Stage 3: Void mode - leave chunk empty
+            // Stage 2: Void mode - leave chunk empty
             // This is the intended behavior for void worlds
             return;
         }
-        // Stage 1 & 2: Should not reach here - NMS injection handles generation
+        // Stage 1 & 3: Should not reach here - NMS injection handles generation
         // If it does, log a warning but don't break (could be race condition or unexpected state)
         plugin.getLogger().warning("generateNoise called on FirmaChunkGenerator with mode " + mode +
                                    " at (" + x + ", " + z + ") - this may indicate an injection issue");
