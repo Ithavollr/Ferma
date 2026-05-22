@@ -22,7 +22,7 @@ import java.util.Random;
  * For Stage 2 (VOID): Overrides generateNoise with empty implementation.
  * For Stage 3 (PACK): NMS injection handles custom noise routing.
  */
-public class FirmaChunkGenerator extends ChunkGenerator {
+public class FermaChunkGenerator extends ChunkGenerator {
 
     /**
      * Generation modes for Firma worlds.
@@ -48,7 +48,7 @@ public class FirmaChunkGenerator extends ChunkGenerator {
      * @param plugin The plugin instance
      * @param modeId The generation mode string ("vanilla", "void", or pack id), or null for default
      */
-    public FirmaChunkGenerator(Ferma plugin, @Nullable String modeId) {
+    public FermaChunkGenerator(Ferma plugin, @Nullable String modeId) {
         this.plugin = plugin;
         this.packId = modeId;
         this.mode = parseMode(modeId);

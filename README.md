@@ -25,7 +25,7 @@ To get started with Multiverse: `mv create <world_name> normal --generator Firma
 
 ## Architecture
 
-1. **Bukkit Registration** - `Firma.getDefaultWorldGenerator()` returns a `FirmaChunkGenerator` wrapper
+1. **Bukkit Registration** - `Ferma.getDefaultWorldGenerator()` returns a `FermaChunkGenerator` wrapper
 2. **NMS Injection** - `NMSInjectListener` hooks `WorldInitEvent` to access the underlying `ServerLevel`
 3. **Generator Replacement** - Uses reflection to replace the `WorldGenContext`'s `ChunkGenerator` with `NMSChunkGeneratorDelegate`
 4. **NoiseRouter Patching** - For PACK mode, patches the `RandomState.router` with custom climate functions before delegating to vanilla
@@ -36,7 +36,7 @@ To get started with Multiverse: `mv create <world_name> normal --generator Firma
 ./gradlew build shadowJar
 ```
 
-The plugin JAR will be in `build/libs/Firma-<version>-all.jar`
+The plugin JAR will be in `build/libs/Ferma-<version>-all.jar`
 
 ## Running
 

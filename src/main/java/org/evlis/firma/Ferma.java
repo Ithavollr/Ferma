@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class Ferma extends JavaPlugin {
     // Thread-safe map for concurrent world initialization
-    private final Map<String, FirmaChunkGenerator> generatorMap = new ConcurrentHashMap<>();
+    private final Map<String, FermaChunkGenerator> generatorMap = new ConcurrentHashMap<>();
     // Loaded packs (id -> pack)
     private Map<String, FirmaPack> packs = Map.of();
     // Pack loader
@@ -84,7 +84,7 @@ public final class Ferma extends JavaPlugin {
         }
         
         final String finalId = id;
-        return generatorMap.computeIfAbsent(worldName, name -> new FirmaChunkGenerator(this, finalId));
+        return generatorMap.computeIfAbsent(worldName, name -> new FermaChunkGenerator(this, finalId));
     }
     
     /**

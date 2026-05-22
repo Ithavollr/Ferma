@@ -13,8 +13,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.WorldInitEvent;
 import org.evlis.firma.Ferma;
-import org.evlis.firma.FirmaChunkGenerator;
-import org.evlis.firma.FirmaChunkGenerator.GenerationMode;
+import org.evlis.firma.FermaChunkGenerator;
+import org.evlis.firma.FermaChunkGenerator.GenerationMode;
 import org.evlis.firma.Reflection;
 import org.evlis.firma.noise.FirmaNoiseRouter;
 import org.evlis.firma.pack.FirmaPack;
@@ -43,7 +43,7 @@ public class NMSInjectListener implements Listener {
         World world = event.getWorld();
 
         // Check if this world is using our generator
-        if (!(world.getGenerator() instanceof FirmaChunkGenerator firmaGenerator)) {
+        if (!(world.getGenerator() instanceof FermaChunkGenerator firmaGenerator)) {
             return; // Not a Firma world, skip
         }
 
