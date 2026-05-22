@@ -21,7 +21,7 @@ One of the major advantages of this approach is that it allows only as much modi
 
 ## Usage
 
-To get started with Multiverse: `mv create <world_name> normal --generator Firma:void`
+To get started with Multiverse: `mv create <world_name> normal --generator Firma:void_template`
 
 ## Architecture
 
