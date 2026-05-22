@@ -9,8 +9,10 @@ A Minecraft Paper 1.21.4 world generation plugin that provides a minimal injecti
 ## Purpose
 
 Ferma was inspired from the Terra project, but takes a different approach. Instead of rebuilding world generation from scratch, it hijacts specifically the noise components, allowing customizable world generation by modifying noise parameters (for example, clamping temperature to 1.0 in order to create a desert world of only hot biomes. Or also clamp continentalness to 0.1 and you'll get Arakis, with no oceans either).  
+
 One of the major advantages of this approach is that it allows only as much modification from vanilla as you want, AND it is compatible with most world-generation datapacks.  
-Current features:
+
+### Current features:
 
 - Void world generation
 - Vanilla world generation
