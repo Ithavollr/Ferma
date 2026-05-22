@@ -5,7 +5,7 @@ import org.bukkit.generator.BiomeProvider;
 import org.bukkit.generator.BlockPopulator;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
-import org.evlis.firma.pack.FirmaPack;
+import org.evlis.firma.pack.FermaPack;
 import org.evlis.firma.pack.VoidPalette;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -20,7 +20,7 @@ import java.util.Random;
  *
  * For Stage 1 (VANILLA): Does not override generateNoise - let Paper/CustomChunkGenerator fall through.
  * For Stage 2 (VOID): Overrides generateNoise with empty implementation.
- * For Stage 3 (PACK): NMS injection handles custom noise routing.
+ * For Stage 3 (NOISE): NMS injection handles custom noise routing.
  */
 public class FermaChunkGenerator extends ChunkGenerator {
 
@@ -33,13 +33,13 @@ public class FermaChunkGenerator extends ChunkGenerator {
         /** Void/empty chunk mode (Stage 2) */
         VOID,
         /** Pack-based configuration (Stage 3) */
-        PACK
+        NOISE
     }
 
     private final Ferma plugin;
     private final GenerationMode mode;
     private final String packId;
-    private FirmaPack cachedPack;
+    private FermaPack cachedPack;
     private final VoidPalette voidPalette;
 
     /**
@@ -53,7 +53,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
         this.packId = modeId;
         this.mode = parseMode(modeId);
         this.voidPalette = loadVoidPalette(modeId);
-        plugin.getLogger().info("Created Firma generator with mode: " + mode + (mode == GenerationMode.PACK ? " (pack: " + modeId + ")" : ""));
+        plugin.getLogger().info("Created Firma generator with mode: " + mode + (mode == GenerationMode.NOISE ? " (pack: " + modeId + ")" : ""));
     }
 
     /**
@@ -65,7 +65,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
             return null;
         }
         // Check if it's a pack with type: void
-        FirmaPack pack = plugin.getPack(modeId);
+        FermaPack pack = plugin.getPack(modeId);
         if (pack != null && pack.voidPalette() != null) {
             return pack.voidPalette();
         }
@@ -87,7 +87,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
                 "Unknown Ferma pack id: '" + id + "'. World creation aborted."
             );
         }
-        FirmaPack pack = plugin.getPack(id);
+        FermaPack pack = plugin.getPack(id);
         if (pack == null) {
             throw new IllegalStateException(
                 "Pack '" + id + "' registered but returned null. This should not happen."
@@ -95,7 +95,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
         }
         return switch (pack.type()) {
             case "void" -> GenerationMode.VOID;
-            case "noise" -> GenerationMode.PACK;
+            case "noise" -> GenerationMode.NOISE;
             default -> throw new IllegalArgumentException(
                 "Pack '" + id + "' has unknown type: '" + pack.type() + "'. Expected 'void' or 'noise'."
             );
@@ -103,10 +103,10 @@ public class FermaChunkGenerator extends ChunkGenerator {
     }
     
     /**
-     * Get the pack for this generator (only valid in PACK mode).
+     * Get the pack for this generator (only valid in NOISE mode).
      */
-    public @Nullable FirmaPack getPack() {
-        if (mode != GenerationMode.PACK) {
+    public @Nullable FermaPack getPack() {
+        if (mode != GenerationMode.NOISE) {
             return null;
         }
         if (cachedPack == null && packId != null) {
@@ -144,7 +144,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
      *
      * Stage 2 (VOID): Overridden to produce empty chunks.
      *
-     * Stage 3 (PACK): NMS injection handles custom climate noise routing.
+     * Stage 3 (NOISE): NMS injection handles custom climate noise routing.
      */
     @Override
     public void generateNoise(@NotNull WorldInfo worldInfo, @NotNull Random random, int x, int z, @NotNull ChunkData chunkData) {
@@ -154,7 +154,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
             return;
         }
 
-        // For VANILLA and PACK modes, this may be called by Bukkit API methods
+        // For VANILLA and NOISE modes, this may be called by Bukkit API methods
         // (e.g., spawn searching, terrain preview) even though NMS injection handles
         // the actual terrain generation. Log with appropriate severity based on mode.
         String message = "Bukkit generateNoise() called with mode " + mode + " at chunk (" + x + ", " + z + ")";
@@ -163,8 +163,8 @@ public class FermaChunkGenerator extends ChunkGenerator {
             // VANILLA mode: Unexpected if NMS injection is working correctly
             // The vanilla generator should handle everything at the NMS level
             plugin.getLogger().warning(message + " - NMS injection may have failed or Bukkit API is being used directly");
-        } else if (mode == GenerationMode.PACK) {
-            // PACK mode: May be expected for Bukkit API calls (spawn search, etc.)
+        } else if (mode == GenerationMode.NOISE) {
+            // NOISE mode: May be expected for Bukkit API calls (spawn search, etc.)
             // Actual terrain generation uses patched NMS router, so this is informational
             // Identify caller from stack trace
             StackTraceElement[] stack = Thread.currentThread().getStackTrace();

@@ -32,8 +32,8 @@ public class PackLoader {
      * Load all packs from the packs directory.
      * Returns a map of pack id to FirmaPack.
      */
-    public Map<String, FirmaPack> loadAll() {
-        Map<String, FirmaPack> packs = new HashMap<>();
+    public Map<String, FermaPack> loadAll() {
+        Map<String, FermaPack> packs = new HashMap<>();
         
         File packsDir = new File(plugin.getDataFolder(), "packs");
         if (!packsDir.exists()) {
@@ -65,7 +65,7 @@ public class PackLoader {
             }
             
             try {
-                FirmaPack pack = loadPack(packId, packYml);
+                FermaPack pack = loadPack(packId, packYml);
                 if (pack != null) {
                     packs.put(packId, pack);
                     logger.info("Loaded pack: " + packId + " (" + pack.name() + ")");
@@ -82,7 +82,7 @@ public class PackLoader {
      * Load a single pack from its pack.yml file.
      */
     @SuppressWarnings("unchecked")
-    private FirmaPack loadPack(String packId, File packYml) throws IOException {
+    private FermaPack loadPack(String packId, File packYml) throws IOException {
         try (FileInputStream fis = new FileInputStream(packYml)) {
             Map<String, Object> data = yaml.load(fis);
             
@@ -167,7 +167,7 @@ public class PackLoader {
                 }
             }
 
-            return new FirmaPack(schemaVersion, id, name, description, type, climate, voidPalette);
+            return new FermaPack(schemaVersion, id, name, description, type, climate, voidPalette);
         }
     }
     

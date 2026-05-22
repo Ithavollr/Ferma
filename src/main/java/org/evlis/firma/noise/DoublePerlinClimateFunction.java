@@ -7,7 +7,7 @@ import net.minecraft.world.level.levelgen.DensityFunction;
  * Climate function backed by DoublePerlinNoiseSampler.
  * Uses shifted noise for XZ position variation (vanilla-style).
  */
-public class DoublePerlinClimateFunction implements FirmaClimateFunction {
+public class DoublePerlinClimateFunction implements FermaClimateFunction {
     private final DoublePerlinNoiseSampler mainSampler;
     private final DoublePerlinNoiseSampler shiftXSampler;
     private final DoublePerlinNoiseSampler shiftZSampler;

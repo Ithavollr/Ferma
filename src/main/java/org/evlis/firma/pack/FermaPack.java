@@ -11,7 +11,7 @@ import org.jetbrains.annotations.Nullable;
  * A parsed Firma pack containing climate function configurations.
  * Packs are loaded from plugins/Firma/packs/<pack_id>/pack.yml
  */
-public record FirmaPack(
+public record FermaPack(
     int schemaVersion,
     String id,
     String name,
@@ -24,7 +24,7 @@ public record FirmaPack(
     /**
      * Create a pack with validation.
      */
-    public FirmaPack {
+    public FermaPack {
         Objects.requireNonNull(id, "Pack id cannot be null");
         if (!id.matches("^[a-z0-9_]+$")) {
             throw new IllegalArgumentException("Pack id must match [a-z0-9_]+, got: " + id);
@@ -75,7 +75,7 @@ public record FirmaPack(
     /**
      * Create a passthrough pack (all identity).
      */
-    public static FirmaPack passthrough() {
-        return new FirmaPack(1, "passthrough", "Passthrough", "Bit-identical vanilla climate", "noise", Collections.emptyMap(), null);
+    public static FermaPack passthrough() {
+        return new FermaPack(1, "passthrough", "Passthrough", "Bit-identical vanilla climate", "noise", Collections.emptyMap(), null);
     }
 }

@@ -84,7 +84,7 @@ class NMSInjectListenerSafetyTest {
         Pattern pattern = Pattern.compile(
             "RandomState\\.class\\.getDeclaredField\\(\\s*\"router\"\\s*\\)");
         if (!pattern.matcher(src).find()) {
-            fail("NMSInjectListener no longer patches RandomState.router - PACK mode " +
+            fail("NMSInjectListener no longer patches RandomState.router - NOISE mode " +
                 "cannot work without this. If this is intentional, update or remove " +
                 "this test with reasoning.");
         }

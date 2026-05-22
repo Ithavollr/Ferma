@@ -2,7 +2,6 @@ package org.evlis.firma.noise;
 
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
-import net.minecraft.world.level.levelgen.DensityFunction;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +28,7 @@ class FermaClimateFunctionTest {
     @Test
     void constant_returnsConfiguredValue() {
         double value = 0.75;
-        FirmaClimateFunction.Constant constant = new FirmaClimateFunction.Constant(value);
+        FermaClimateFunction.Constant constant = new FermaClimateFunction.Constant(value);
 
         // Should return same value at any coordinate
         assertEquals(value, constant.compute(0, 64, 0), 0.0001);
@@ -39,7 +38,7 @@ class FermaClimateFunctionTest {
 
     @Test
     void constant_minMaxValue_matchesConfigured() {
-        FirmaClimateFunction.Constant constant = new FirmaClimateFunction.Constant(0.5);
+        FermaClimateFunction.Constant constant = new FermaClimateFunction.Constant(0.5);
 
         assertEquals(0.5, constant.minValue(), 0.0001);
         assertEquals(0.5, constant.maxValue(), 0.0001);
@@ -47,7 +46,7 @@ class FermaClimateFunctionTest {
 
     @Test
     void constant_fillArray_optimizesCorrectly() {
-        FirmaClimateFunction.Constant constant = new FirmaClimateFunction.Constant(0.25);
+        FermaClimateFunction.Constant constant = new FermaClimateFunction.Constant(0.25);
         double[] array = new double[100];
 
         // Fill with context provider (null is safe for Constant)
@@ -255,8 +254,8 @@ class FermaClimateFunctionTest {
 
     @Test
     void identity_delegatesToWrapped() {
-        FirmaClimateFunction.Constant wrapped = new FirmaClimateFunction.Constant(0.42);
-        FirmaClimateFunction.Identity identity = new FirmaClimateFunction.Identity(wrapped);
+        FermaClimateFunction.Constant wrapped = new FermaClimateFunction.Constant(0.42);
+        FermaClimateFunction.Identity identity = new FermaClimateFunction.Identity(wrapped);
 
         // Identity should return what the wrapped function returns
         assertEquals(0.42, identity.compute(0, 64, 0), 0.0001);
@@ -265,8 +264,8 @@ class FermaClimateFunctionTest {
 
     @Test
     void identity_minMaxValue_delegatesToWrapped() {
-        FirmaClimateFunction.Constant wrapped = new FirmaClimateFunction.Constant(0.75);
-        FirmaClimateFunction.Identity identity = new FirmaClimateFunction.Identity(wrapped);
+        FermaClimateFunction.Constant wrapped = new FermaClimateFunction.Constant(0.75);
+        FermaClimateFunction.Identity identity = new FermaClimateFunction.Identity(wrapped);
 
         assertEquals(wrapped.minValue(), identity.minValue(), 0.0001);
         assertEquals(wrapped.maxValue(), identity.maxValue(), 0.0001);

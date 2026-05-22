@@ -16,8 +16,8 @@ import org.evlis.firma.Ferma;
 import org.evlis.firma.FermaChunkGenerator;
 import org.evlis.firma.FermaChunkGenerator.GenerationMode;
 import org.evlis.firma.Reflection;
-import org.evlis.firma.noise.FirmaNoiseRouter;
-import org.evlis.firma.pack.FirmaPack;
+import org.evlis.firma.noise.FermaNoiseRouter;
+import org.evlis.firma.pack.FermaPack;
 import org.evlis.firma.pack.VoidChunkHandler;
 import org.evlis.firma.pack.VoidPalette;
 
@@ -71,16 +71,16 @@ public class NMSInjectListener implements Listener {
             GenerationMode mode = firmaGenerator.getMode();
             plugin.getLogger().info("Generation mode: " + mode);
             
-            // For PACK mode, patch the NoiseRouter using the pack's configuration
-            if (mode == GenerationMode.PACK) {
+            // For NOISE mode, patch the NoiseRouter using the pack's configuration
+            if (mode == GenerationMode.NOISE) {
                 if (!(vanillaGenerator instanceof NoiseBasedChunkGenerator noiseGenerator)) {
-                    throw new IllegalStateException("PACK mode requires NoiseBasedChunkGenerator, got: " + vanillaGenerator.getClass().getName());
+                    throw new IllegalStateException("NOISE mode requires NoiseBasedChunkGenerator, got: " + vanillaGenerator.getClass().getName());
                 }
                 
                 // Get the pack
-                FirmaPack pack = firmaGenerator.getPack();
+                FermaPack pack = firmaGenerator.getPack();
                 if (pack == null) {
-                    plugin.getLogger().warning("PACK mode but no pack found for world: " + world.getName());
+                    plugin.getLogger().warning("NOISE mode but no pack found for world: " + world.getName());
                 } else {
                     // Patch the NoiseRouter in RandomState (transient, not serialized).
                     // Replacing NoiseBasedChunkGenerator.settings with a Direct holder would
@@ -96,7 +96,7 @@ public class NMSInjectListener implements Listener {
                         plugin.getLogger().info("Amplified terrain: " + amplified);
                         
                         // Patch the climate functions using the pack
-                        NoiseRouter patchedRouter = FirmaNoiseRouter.patchClimateFunctions(
+                        NoiseRouter patchedRouter = FermaNoiseRouter.patchClimateFunctions(
                             wiredRouter, randomState, serverWorld.getSeed(), pack, amplified
                         );
                         

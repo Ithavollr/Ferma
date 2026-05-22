@@ -69,7 +69,7 @@ import net.minecraft.world.level.levelgen.DensityFunction;
  * <p>Y coordinate is ignored — this is a purely horizontal (XZ) function, appropriate
  * for climate parameters that drive biome placement based on surface position.
  */
-public class RadialGradientClimateFunction implements FirmaClimateFunction {
+public class RadialGradientClimateFunction implements FermaClimateFunction {
 
     private final double centerX;
     private final double centerZ;

@@ -7,7 +7,7 @@ import net.minecraft.world.level.levelgen.DensityFunction;
  * Interface for Firma's custom climate noise functions.
  * These replace vanilla's climate density functions in Stage 2.
  */
-public interface FirmaClimateFunction extends DensityFunction {
+public interface FermaClimateFunction extends DensityFunction {
     
     /**
      * Shared fail-on-encode codec for the simple Firma climate functions ({@code Identity},
@@ -35,7 +35,7 @@ public interface FirmaClimateFunction extends DensityFunction {
     /**
      * Identity climate function - delegates to vanilla for testing.
      */
-    class Identity implements FirmaClimateFunction {
+    class Identity implements FermaClimateFunction {
         private final DensityFunction vanilla;
         
         public Identity(DensityFunction vanilla) {
@@ -78,7 +78,7 @@ public interface FirmaClimateFunction extends DensityFunction {
      * Constant climate function - returns a fixed value.
      * Useful for testing (e.g., always hot temperature).
      */
-    class Constant implements FirmaClimateFunction {
+    class Constant implements FermaClimateFunction {
         private final double value;
         
         public Constant(double value) {
@@ -121,10 +121,10 @@ public interface FirmaClimateFunction extends DensityFunction {
      * Weirdness to ridges fold function.
      * Converts weirdness noise to ridge values using vanilla's formula.
      */
-    class WeirdnessToRidges implements FirmaClimateFunction {
-        private final FirmaClimateFunction source;
+    class WeirdnessToRidges implements FermaClimateFunction {
+        private final FermaClimateFunction source;
         
-        public WeirdnessToRidges(FirmaClimateFunction source) {
+        public WeirdnessToRidges(FermaClimateFunction source) {
             this.source = source;
         }
         
@@ -163,7 +163,7 @@ public interface FirmaClimateFunction extends DensityFunction {
         
         @Override
         public DensityFunction mapAll(Visitor visitor) {
-            return new WeirdnessToRidges((FirmaClimateFunction) source.mapAll(visitor));
+            return new WeirdnessToRidges((FermaClimateFunction) source.mapAll(visitor));
         }
         
         @Override

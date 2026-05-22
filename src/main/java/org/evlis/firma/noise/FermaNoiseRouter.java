@@ -13,14 +13,14 @@ import net.minecraft.world.level.levelgen.Noises;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.synth.BlendedNoise;
 import org.evlis.firma.pack.ClimateFunctionFactory;
-import org.evlis.firma.pack.FirmaPack;
+import org.evlis.firma.pack.FermaPack;
 
 /**
  * Utility to patch vanilla NoiseRouter with Firma's climate functions.
  * This is the core of Stage 2 - we replace the 6 climate density functions
  * while leaving everything else unchanged.
  */
-public class FirmaNoiseRouter {
+public class FermaNoiseRouter {
     
     /**
      * Create a patched NoiseRouter using a pack's climate configuration.
@@ -29,7 +29,7 @@ public class FirmaNoiseRouter {
     public static NoiseRouter patchClimateFunctions(NoiseRouter vanillaRouter,
                                                    RandomState randomState,
                                                    long seed,
-                                                   FirmaPack pack,
+                                                   FermaPack pack,
                                                    boolean amplified) {
         ClimateFunctionFactory factory = new ClimateFunctionFactory(seed, pack.id());
         
@@ -624,21 +624,21 @@ public class FirmaNoiseRouter {
         if (mode == PatchMode.IDENTITY) {
             // Identity mode - delegate to vanilla for verification
             return new NoiseRouter(
-                new FirmaClimateFunction.Identity(vanillaRouter.barrierNoise()),
-                new FirmaClimateFunction.Identity(vanillaRouter.fluidLevelFloodednessNoise()),
-                new FirmaClimateFunction.Identity(vanillaRouter.fluidLevelSpreadNoise()),
-                new FirmaClimateFunction.Identity(vanillaRouter.lavaNoise()),
-                new FirmaClimateFunction.Identity(vanillaRouter.temperature()),
-                new FirmaClimateFunction.Identity(vanillaRouter.vegetation()),
-                new FirmaClimateFunction.Identity(vanillaRouter.continents()),
-                new FirmaClimateFunction.Identity(vanillaRouter.erosion()),
-                new FirmaClimateFunction.Identity(vanillaRouter.depth()),
-                new FirmaClimateFunction.Identity(vanillaRouter.ridges()),
-                new FirmaClimateFunction.Identity(vanillaRouter.initialDensityWithoutJaggedness()),
-                new FirmaClimateFunction.Identity(vanillaRouter.finalDensity()),
-                new FirmaClimateFunction.Identity(vanillaRouter.veinToggle()),
-                new FirmaClimateFunction.Identity(vanillaRouter.veinRidged()),
-                new FirmaClimateFunction.Identity(vanillaRouter.veinGap())
+                new FermaClimateFunction.Identity(vanillaRouter.barrierNoise()),
+                new FermaClimateFunction.Identity(vanillaRouter.fluidLevelFloodednessNoise()),
+                new FermaClimateFunction.Identity(vanillaRouter.fluidLevelSpreadNoise()),
+                new FermaClimateFunction.Identity(vanillaRouter.lavaNoise()),
+                new FermaClimateFunction.Identity(vanillaRouter.temperature()),
+                new FermaClimateFunction.Identity(vanillaRouter.vegetation()),
+                new FermaClimateFunction.Identity(vanillaRouter.continents()),
+                new FermaClimateFunction.Identity(vanillaRouter.erosion()),
+                new FermaClimateFunction.Identity(vanillaRouter.depth()),
+                new FermaClimateFunction.Identity(vanillaRouter.ridges()),
+                new FermaClimateFunction.Identity(vanillaRouter.initialDensityWithoutJaggedness()),
+                new FermaClimateFunction.Identity(vanillaRouter.finalDensity()),
+                new FermaClimateFunction.Identity(vanillaRouter.veinToggle()),
+                new FermaClimateFunction.Identity(vanillaRouter.veinRidged()),
+                new FermaClimateFunction.Identity(vanillaRouter.veinGap())
             );
         } else {
             // Custom mode - implement actual climate logic
@@ -646,28 +646,28 @@ public class FirmaNoiseRouter {
             PositionalRandomFactory factory = new PositionalRandomFactory(seed);
             
             // Create custom climate functions
-            FirmaClimateFunction temperature = createTemperatureFunction(factory, mode);
-            FirmaClimateFunction humidity = createHumidityFunction(factory, mode);
-            FirmaClimateFunction continents = createContinentsFunction(factory, mode);
-            FirmaClimateFunction erosion = createErosionFunction(factory, mode);
-            FirmaClimateFunction weirdness = createWeirdnessFunction(factory, mode);
+            FermaClimateFunction temperature = createTemperatureFunction(factory, mode);
+            FermaClimateFunction humidity = createHumidityFunction(factory, mode);
+            FermaClimateFunction continents = createContinentsFunction(factory, mode);
+            FermaClimateFunction erosion = createErosionFunction(factory, mode);
+            FermaClimateFunction weirdness = createWeirdnessFunction(factory, mode);
             
             return new NoiseRouter(
-                new FirmaClimateFunction.Identity(vanillaRouter.barrierNoise()),
-                new FirmaClimateFunction.Identity(vanillaRouter.fluidLevelFloodednessNoise()),
-                new FirmaClimateFunction.Identity(vanillaRouter.fluidLevelSpreadNoise()),
-                new FirmaClimateFunction.Identity(vanillaRouter.lavaNoise()),
+                new FermaClimateFunction.Identity(vanillaRouter.barrierNoise()),
+                new FermaClimateFunction.Identity(vanillaRouter.fluidLevelFloodednessNoise()),
+                new FermaClimateFunction.Identity(vanillaRouter.fluidLevelSpreadNoise()),
+                new FermaClimateFunction.Identity(vanillaRouter.lavaNoise()),
                 temperature,
                 humidity,
                 continents,
                 erosion,
-                new FirmaClimateFunction.Identity(vanillaRouter.depth()),
+                new FermaClimateFunction.Identity(vanillaRouter.depth()),
                 weirdness,
-                new FirmaClimateFunction.Identity(vanillaRouter.initialDensityWithoutJaggedness()),
-                new FirmaClimateFunction.Identity(vanillaRouter.finalDensity()),
-                new FirmaClimateFunction.Identity(vanillaRouter.veinToggle()),
-                new FirmaClimateFunction.Identity(vanillaRouter.veinRidged()),
-                new FirmaClimateFunction.Identity(vanillaRouter.veinGap())
+                new FermaClimateFunction.Identity(vanillaRouter.initialDensityWithoutJaggedness()),
+                new FermaClimateFunction.Identity(vanillaRouter.finalDensity()),
+                new FermaClimateFunction.Identity(vanillaRouter.veinToggle()),
+                new FermaClimateFunction.Identity(vanillaRouter.veinRidged()),
+                new FermaClimateFunction.Identity(vanillaRouter.veinGap())
             );
         }
     }
@@ -676,12 +676,12 @@ public class FirmaNoiseRouter {
      * Create temperature function - uses shifted DoublePerlin noise.
      * Vanilla parameters: firstOctave=-10, amplitudes=[1.5, 0.0, 1.0, 0.0, 0.0, 0.0], xz_scale=0.25
      */
-    private static FirmaClimateFunction createTemperatureFunction(PositionalRandomFactory factory, PatchMode mode) {
+    private static FermaClimateFunction createTemperatureFunction(PositionalRandomFactory factory, PatchMode mode) {
         if (mode == PatchMode.CONSTANT_HOT) {
-            return new FirmaClimateFunction.Constant(1.0);
+            return new FermaClimateFunction.Constant(1.0);
         }
         if (mode == PatchMode.FROZEN) {
-            return new FirmaClimateFunction.Constant(-1.0);
+            return new FermaClimateFunction.Constant(-1.0);
         }
         // Standard overworld temperature noise (used by VANILLA_NOISE and CUSTOM)
         return new DoublePerlinClimateFunction(
@@ -700,7 +700,7 @@ public class FirmaNoiseRouter {
      * Create humidity function - uses shifted DoublePerlin noise.
      * Vanilla parameters: firstOctave=-8, amplitudes=[1.0, 1.0, 0.0, 0.0, 0.0, 0.0], xz_scale=0.25
      */
-    private static FirmaClimateFunction createHumidityFunction(PositionalRandomFactory factory, PatchMode mode) {
+    private static FermaClimateFunction createHumidityFunction(PositionalRandomFactory factory, PatchMode mode) {
         // Standard overworld vegetation/humidity noise (used by all non-constant modes)
         return new DoublePerlinClimateFunction(
             factory,
@@ -718,7 +718,7 @@ public class FirmaNoiseRouter {
      * Create continentalness function - uses shifted DoublePerlin noise.
      * Vanilla parameters: firstOctave=-9, amplitudes=[1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0], xz_scale=0.25
      */
-    private static FirmaClimateFunction createContinentsFunction(PositionalRandomFactory factory, PatchMode mode) {
+    private static FermaClimateFunction createContinentsFunction(PositionalRandomFactory factory, PatchMode mode) {
         // Standard overworld continentalness noise
         return new DoublePerlinClimateFunction(
             factory,
@@ -736,7 +736,7 @@ public class FirmaNoiseRouter {
      * Create erosion function - uses shifted DoublePerlin noise.
      * Vanilla parameters: firstOctave=-9, amplitudes=[1.0, 1.0, 0.0, 1.0, 1.0], xz_scale=0.25
      */
-    private static FirmaClimateFunction createErosionFunction(PositionalRandomFactory factory, PatchMode mode) {
+    private static FermaClimateFunction createErosionFunction(PositionalRandomFactory factory, PatchMode mode) {
         // Standard overworld erosion noise
         return new DoublePerlinClimateFunction(
             factory,
@@ -754,7 +754,7 @@ public class FirmaNoiseRouter {
      * Create weirdness (ridges) function - uses shifted DoublePerlin noise.
      * Vanilla parameters: firstOctave=-7, amplitudes=[1.0, 2.0, 1.0, 0.0, 0.0, 0.0], xz_scale=0.25
      */
-    private static FirmaClimateFunction createWeirdnessFunction(PositionalRandomFactory factory, PatchMode mode) {
+    private static FermaClimateFunction createWeirdnessFunction(PositionalRandomFactory factory, PatchMode mode) {
         // Standard overworld ridges/weirdness noise
         DoublePerlinClimateFunction weirdness = new DoublePerlinClimateFunction(
             factory,

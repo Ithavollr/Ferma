@@ -37,20 +37,20 @@ class FermaDensityFunctionCodecGuardTest {
 
     @Test
     void constant_codecErrorsOnEncode() {
-        assertCodecErrorsOnEncode(new FirmaClimateFunction.Constant(0.5));
+        assertCodecErrorsOnEncode(new FermaClimateFunction.Constant(0.5));
     }
 
     @Test
     void identity_codecErrorsOnEncode() {
         // Wrap a trivial vanilla DensityFunction; identity inherits the same codec.
-        assertCodecErrorsOnEncode(new FirmaClimateFunction.Identity(
-            new FirmaClimateFunction.Constant(0.0)));
+        assertCodecErrorsOnEncode(new FermaClimateFunction.Identity(
+            new FermaClimateFunction.Constant(0.0)));
     }
 
     @Test
     void weirdnessToRidges_codecErrorsOnEncode() {
-        assertCodecErrorsOnEncode(new FirmaClimateFunction.WeirdnessToRidges(
-            new FirmaClimateFunction.Constant(0.0)));
+        assertCodecErrorsOnEncode(new FermaClimateFunction.WeirdnessToRidges(
+            new FermaClimateFunction.Constant(0.0)));
     }
 
     @Test

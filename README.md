@@ -21,14 +21,14 @@ One of the major advantages of this approach is that it allows only as much modi
 
 ## Usage
 
-To get started with Multiverse: `mv create <world_name> normal --generator Firma:void_template`
+To get started with Multiverse: `mv create <world_name> normal --generator Ferma:void_template`
 
 ## Architecture
 
 1. **Bukkit Registration** - `Ferma.getDefaultWorldGenerator()` returns a `FermaChunkGenerator` wrapper
 2. **NMS Injection** - `NMSInjectListener` hooks `WorldInitEvent` to access the underlying `ServerLevel`
 3. **Generator Replacement** - Uses reflection to replace the `WorldGenContext`'s `ChunkGenerator` with `NMSChunkGeneratorDelegate`
-4. **NoiseRouter Patching** - For PACK mode, patches the `RandomState.router` with custom climate functions before delegating to vanilla
+4. **NoiseRouter Patching** - For NOISE mode, patches the `RandomState.router` with custom climate functions before delegating to vanilla
 
 ## Building
 

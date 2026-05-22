@@ -2,7 +2,7 @@ package org.evlis.firma.pack;
 
 import net.minecraft.world.level.levelgen.DensityFunction;
 import org.evlis.firma.noise.DoublePerlinClimateFunction;
-import org.evlis.firma.noise.FirmaClimateFunction;
+import org.evlis.firma.noise.FermaClimateFunction;
 import org.evlis.firma.noise.PositionalRandomFactory;
 import org.evlis.firma.noise.RadialGradientClimateFunction;
 
@@ -34,7 +34,7 @@ public class ClimateFunctionFactory {
     
     private DensityFunction buildFromConfig(ClimateFunctionConfig config, PositionalRandomFactory factory, DensityFunction vanilla) {
         return switch (config) {
-            case ClimateFunctionConfig.Constant c -> new FirmaClimateFunction.Constant(c.value());
+            case ClimateFunctionConfig.Constant c -> new FermaClimateFunction.Constant(c.value());
             case ClimateFunctionConfig.Identity i -> vanilla; // Pass through vanilla directly - no wrapper
             case ClimateFunctionConfig.Perlin p -> buildPerlin(p, factory);
             case ClimateFunctionConfig.OctavePerlin o -> buildOctavePerlin(o, factory);
@@ -124,11 +124,11 @@ public class ClimateFunctionFactory {
         DensityFunction source = buildFromConfig(config.source(), factory, vanilla);
         
         // Wrap with weirdness to ridges conversion - source must be a FirmaClimateFunction
-        if (source instanceof FirmaClimateFunction firmaSource) {
-            return new FirmaClimateFunction.WeirdnessToRidges(firmaSource);
+        if (source instanceof FermaClimateFunction firmaSource) {
+            return new FermaClimateFunction.WeirdnessToRidges(firmaSource);
         }
         // If source is plain vanilla, wrap it in Identity first
-        return new FirmaClimateFunction.WeirdnessToRidges(new FirmaClimateFunction.Identity(source));
+        return new FermaClimateFunction.WeirdnessToRidges(new FermaClimateFunction.Identity(source));
     }
     
     private DensityFunction buildRadialGradient(ClimateFunctionConfig.RadialGradient config) {

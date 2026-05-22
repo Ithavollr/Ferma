@@ -5,7 +5,7 @@ import org.bukkit.World;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.evlis.firma.NMS.NMSInjectListener;
-import org.evlis.firma.pack.FirmaPack;
+import org.evlis.firma.pack.FermaPack;
 import org.evlis.firma.pack.PackLoader;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -17,7 +17,7 @@ public final class Ferma extends JavaPlugin {
     // Thread-safe map for concurrent world initialization
     private final Map<String, FermaChunkGenerator> generatorMap = new ConcurrentHashMap<>();
     // Loaded packs (id -> pack)
-    private Map<String, FirmaPack> packs = Map.of();
+    private Map<String, FermaPack> packs = Map.of();
     // Pack loader
     private PackLoader packLoader;
 
@@ -38,7 +38,7 @@ public final class Ferma extends JavaPlugin {
     /**
      * Get a loaded pack by id.
      */
-    public @Nullable FirmaPack getPack(String id) {
+    public @Nullable FermaPack getPack(String id) {
         return packs.get(id);
     }
     
@@ -57,12 +57,11 @@ public final class Ferma extends JavaPlugin {
     /**
      * Called by Bukkit when a world is created with generator: Firma
      *
-     * The id parameter can specify the generation mode:
+     * The id parameter is a UID string that CANNOT be vanilla, void, or noise.
+     * The type parameter is used to specify the generation mode:
      *   - "vanilla" or null: Faithful vanilla pass-through (Stage 1, default)
-     *   - "void": Void/empty chunks (Stage 3)
-     *   - Any pack id: Pack-based configuration (Stage 4)
-     *
-     * Legacy "noise" id is no longer supported - use a pack instead.
+     *   - "void": Void/empty chunks (Stage 2)
+     *   - "noise": custom noise-based configuration (Stage 3)
      *
      * Example bukkit.yml:
      *   worlds:
@@ -91,7 +90,7 @@ public final class Ferma extends JavaPlugin {
      * Check if a generator id is a reserved name.
      */
     private boolean isReservedName(String id) {
-        return id.equals("vanilla") || id.equals("void");
+        return id.equals("vanilla") || id.equals("void") || id.equals("noise");
     }
 
     public boolean isFirmaWorld(World world) {
