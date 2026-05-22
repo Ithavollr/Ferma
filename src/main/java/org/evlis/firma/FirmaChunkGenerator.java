@@ -153,10 +153,30 @@ public class FirmaChunkGenerator extends ChunkGenerator {
             // This is the intended behavior for void worlds
             return;
         }
-        // Stage 1 & 3: Should not reach here - NMS injection handles generation
-        // If it does, log a warning but don't break (could be race condition or unexpected state)
-        plugin.getLogger().warning("generateNoise called on FirmaChunkGenerator with mode " + mode +
-                                   " at (" + x + ", " + z + ") - this may indicate an injection issue");
+
+        // For VANILLA and PACK modes, this may be called by Bukkit API methods
+        // (e.g., spawn searching, terrain preview) even though NMS injection handles
+        // the actual terrain generation. Log with appropriate severity based on mode.
+        String message = "Bukkit generateNoise() called with mode " + mode + " at chunk (" + x + ", " + z + ")";
+
+        if (mode == GenerationMode.VANILLA) {
+            // VANILLA mode: Unexpected if NMS injection is working correctly
+            // The vanilla generator should handle everything at the NMS level
+            plugin.getLogger().warning(message + " - NMS injection may have failed or Bukkit API is being used directly");
+        } else if (mode == GenerationMode.PACK) {
+            // PACK mode: May be expected for Bukkit API calls (spawn search, etc.)
+            // Actual terrain generation uses patched NMS router, so this is informational
+            // Identify caller from stack trace
+            StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+            String caller = stack.length > 3
+                ? stack[3].getClassName().substring(stack[3].getClassName().lastIndexOf('.') + 1)
+                  + "." + stack[3].getMethodName() + ":" + stack[3].getLineNumber()
+                : "unknown";
+            plugin.getLogger().info(message + " - caller: " + caller + " (NMS router handles actual generation)");
+        } else {
+            // Catch-all for unexpected mode values (defensive for alpha builds)
+            plugin.getLogger().severe(message + " - UNEXPECTED MODE VALUE! This is a bug.");
+        }
     }
 
     /**
