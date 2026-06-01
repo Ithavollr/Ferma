@@ -253,8 +253,8 @@ platforms/**/run/**
 **/.vale.ini
 
 ### Other projects
-/Terra
+#/Terra
 /worldgen
-/Aincrad
+#/Aincrad
 /NMS*
 /Multiverse-Core
