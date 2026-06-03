@@ -17,12 +17,16 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public/") {
         name = "PaperMC"
     }
+    maven("https://repo.aikar.co/content/groups/aikar/") {
+        name = "aikar"
+    }
 }
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
     paperweight.paperDevBundle("1.21.4-R0.1-SNAPSHOT")
     implementation("xyz.jpenilla:reflection-remapper:0.1.2")
+    implementation("co.aikar:acf-paper:0.5.1-SNAPSHOT")
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -47,6 +51,8 @@ tasks {
 
     shadowJar {
         archiveClassifier.set("all")
+        relocate("co.aikar.commands", "org.evlis.firma.acf")
+        relocate("co.aikar.locales", "org.evlis.firma.locales")
     }
 
     test {
@@ -87,6 +93,7 @@ tasks.register<RunServer>("runServerInteractive_1-21-4") {
         hangar("Chunky", "1.4.40")
         modrinth("squaremap", "1.3.4")
         modrinth("simple-fly", "0.0.1")
+        modrinth("terra", "6.6.1-BETA-bukkit")
     }
     pluginJars.from(tasks.shadowJar)
     systemProperty("net.kyori.adventure.text.warnWhenLegacyFormattingDetected", "false")

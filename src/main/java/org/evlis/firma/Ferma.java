@@ -1,5 +1,6 @@
 package org.evlis.firma;
 
+import co.aikar.commands.PaperCommandManager;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.generator.ChunkGenerator;
@@ -7,6 +8,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.evlis.firma.NMS.NMSInjectListener;
 import org.evlis.firma.pack.FermaPack;
 import org.evlis.firma.pack.PackLoader;
+import org.evlis.firma.commands.FixupCommand;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -33,6 +35,11 @@ public final class Ferma extends JavaPlugin {
         // Register the NMS injection listener
         Bukkit.getPluginManager().registerEvents(new NMSInjectListener(this), this);
         getLogger().info("Firma injection listener registered.");
+        
+        // Register commands
+        PaperCommandManager commandManager = new PaperCommandManager(this);
+        commandManager.registerCommand(new FixupCommand(this));
+        getLogger().info("Firma commands registered.");
     }
     
     /**
