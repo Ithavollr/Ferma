@@ -83,8 +83,9 @@ tasks.register<RunServer>("runServerTest") {
         github("Ifiht", "AutoStop", "v1.2.0", "AutoStop-1.2.0.jar")
     }
     pluginJars.from(tasks.shadowJar)
+    val eulaFile = layout.projectDirectory.file("run/eula.txt").asFile
     doFirst {
-        file("run/eula.txt").apply { parentFile.mkdirs() }.writeText("eula=true\n")
+        eulaFile.apply { parentFile.mkdirs() }.writeText("eula=true\n")
     }
 }
 // Start a local test server for login & manual testing
