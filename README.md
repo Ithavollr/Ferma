@@ -1,6 +1,6 @@
 <img src="https://codeberg.org/Ifiht/Firma/raw/branch/main/logo.png" width="109" height="109">
 
-# Ferma
+# Ferma [![Build](https://github.com/Ithavollr/Ferma/actions/workflows/build.yml/badge.svg)](https://github.com/Ithavollr/Ferma/actions/workflows/build.yml)
 
 A Minecraft Paper 1.21.4 world generation plugin that provides a minimal injection point into vanilla chunk generation.
 > [!NOTE]

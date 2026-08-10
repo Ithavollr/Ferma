@@ -83,6 +83,9 @@ tasks.register<RunServer>("runServerTest") {
         github("Ifiht", "AutoStop", "v1.2.0", "AutoStop-1.2.0.jar")
     }
     pluginJars.from(tasks.shadowJar)
+    doFirst {
+        file("run/eula.txt").apply { parentFile.mkdirs() }.writeText("eula=true\n")
+    }
 }
 // Start a local test server for login & manual testing
 tasks.register<RunServer>("runServerInteractive_1-21-4") {
