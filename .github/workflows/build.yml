@@ -1,4 +1,4 @@
-cd name: Gradle Build
+name: Gradle Build
 on:
   push:
     branches: [ "seed" ]
