@@ -1,4 +1,4 @@
-<img src="https://codeberg.org/Ifiht/Firma/raw/branch/main/logo.png" width="109" height="109">
+<img src="logo.png" width="109" height="109">
 
 # Ferma [![Build](https://github.com/Ithavollr/Ferma/actions/workflows/build.yml/badge.svg)](https://github.com/Ithavollr/Ferma/actions/workflows/build.yml)
 
