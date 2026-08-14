@@ -43,6 +43,8 @@ gradle-app.setting
 
 # Package Files #
 *.jar
+# ...but the Gradle wrapper jar belongs in version control (CI and gradlew need it)
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 *.nar
 *.ear
