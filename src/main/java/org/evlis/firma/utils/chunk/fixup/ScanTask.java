@@ -1,8 +1,12 @@
 package org.evlis.firma.utils.chunk.fixup;
 
-import org.bukkit.Bukkit;
+import ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
+import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.plugin.Plugin;
 
 import java.io.File;
@@ -78,7 +82,8 @@ public class ScanTask implements Runnable {
         sender.sendMessage("§7Total area: §f" + totalChunks + " §7chunks");
         
         Semaphore working = new Semaphore(MAX_WORKING_COUNT);
-        
+        ServerLevel serverLevel = ((CraftWorld) world).getHandle();
+
         for (int x = minX; x <= maxX && !stopped.get(); x++) {
             for (int z = minZ; z <= maxZ && !stopped.get(); z++) {
                 final int chunkX = x;
@@ -97,26 +102,29 @@ public class ScanTask implements Runnable {
                     break;
                 }
                 
-                world.getChunkAtAsync(chunkX, chunkZ, false).whenComplete((chunk, throwable) -> {
+                // Raw NBT read: same path as ChunkLoadTask, stopping before the deserialization
+                // that substitutes unknown biomes with the registry default
+                MoonriseRegionFileIO.loadDataAsync(serverLevel, chunkX, chunkZ,
+                        MoonriseRegionFileIO.RegionFileType.CHUNK_DATA, (chunkData, throwable) -> {
                     try {
                         if (throwable != null) {
-                            logger.warning("Failed to load chunk (" + chunkX + ", " + chunkZ + "): " + throwable.getMessage());
+                            logger.warning("Failed to read chunk (" + chunkX + ", " + chunkZ + "): " + throwable.getMessage());
                             update(chunkX, chunkZ, false);
                             return;
                         }
-                        
-                        if (chunk == null || stopped.get()) {
+
+                        if (chunkData == null || stopped.get()) {
                             update(chunkX, chunkZ, false);
                             return;
                         }
-                        
-                        processChunk(chunk, chunkX, chunkZ);
+
+                        processChunk(serverLevel, chunkData, chunkX, chunkZ);
                         update(chunkX, chunkZ, true);
-                        
+
                     } finally {
                         working.release();
                     }
-                });
+                }, false);
             }
         }
         
@@ -138,11 +146,15 @@ public class ScanTask implements Runnable {
     }
 
     /**
-     * Extract biome palette from chunk, validate entries, and record invalid biomes in report
+     * Extract biome palette from raw chunk NBT, validate entries, and record invalid biomes in report.
+     * Synchronized because Moonrise IO callbacks run concurrently and ScanReport's counters are plain ints.
+     * wozniak: serializes all chunk processing behind one lock; if this becomes the bottleneck,
+     * make ScanReport's counters atomic instead.
      */
-    private void processChunk(org.bukkit.Chunk chunk, int x, int z) {
+    private synchronized void processChunk(ServerLevel serverLevel, CompoundTag chunkData, int x, int z) {
         try {
-            Set<String> biomeKeys = extractor.extractBiomeKeys(chunk);
+            CompoundTag upgraded = serverLevel.getChunkSource().chunkMap.upgradeChunkTag(chunkData, new ChunkPos(x, z));
+            Set<String> biomeKeys = extractor.extractBiomeKeys(upgraded);
             Set<String> invalidBiomes = new HashSet<>();
             
             for (String biomeKey : biomeKeys) {

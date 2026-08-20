@@ -44,6 +44,8 @@ tasks {
 
     processResources {
         val props = mapOf("version" to version)
+        // expand() properties aren't tracked as inputs; without this a version bump leaves stale output
+        inputs.property("version", version)
         filesMatching("plugin.yml") {
             expand(props)
         }
