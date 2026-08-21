@@ -151,7 +151,40 @@ public class FixupCommand extends BaseCommand {
         player.sendMessage(String.format("§7Biome at §f%d %d %d§7: §f%s", x, y, z, key));
     }
 
-    // TODO: /ferma biomelook's counterpart "biomeswap <from> <to> [radius?]" — targeted biome replacement (the fixer)
+    @Subcommand("biomeswap")
+    @CommandPermission("ferma.command.biomeswap")
+    @CommandCompletion("@worlds")
+    @Description("Replace every occurrence of one biome with another across a world's generated chunks")
+    @Syntax("<world> <from> <to>")
+    public void onBiomeSwap(CommandSender sender, String worldName, String from, String to) {
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            sender.sendMessage("§cWorld not found: " + worldName);
+            return;
+        }
+
+        if (currentScanTask.get() != null && !currentScanTask.get().isStopped()) {
+            sender.sendMessage("§cA scan is already running. Use /ferma cancel to stop it.");
+            return;
+        }
+
+        if (from.equals(to)) {
+            sender.sendMessage("§cFrom and to are the same biome; nothing to do.");
+            return;
+        }
+        // <from> is a plain string match and may be an unregistered key; <to> must be real
+        if (!new BiomeValidator().isValid(to)) {
+            sender.sendMessage("§cTarget is not a registered biome: " + to);
+            return;
+        }
+
+        sender.sendMessage("§7Swapping §f" + from + " §7-> §f" + to + " §7across " + world.getName());
+
+        ScanTask task = new ScanTask(plugin, world, sender, true, Map.of(from, to));
+        currentScanTask.set(task);
+
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, task);
+    }
 
     @Subcommand("status")
     @CommandPermission("ferma.command.status")

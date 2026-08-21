@@ -224,15 +224,17 @@ public class ScanTask implements Runnable {
             if (!invalidBiomes.isEmpty()) {
                 report.incrementErrorChunks();
                 report.addChunkDetail(x, z, invalidBiomes);
+            }
 
-                if (fixMode()) {
-                    // guard against a region header pointing at the wrong chunk (mirrors ChunkStorage.write's check)
-                    if (upgraded.getInt("xPos") != x || upgraded.getInt("zPos") != z) {
-                        logger.warning(String.format("Chunk (%d, %d) has mismatched stored position (%d, %d); not fixing it",
-                            x, z, upgraded.getInt("xPos"), upgraded.getInt("zPos")));
-                    } else if (extractor.replaceBiomeKeys(upgraded, replacements)) {
-                        pendingWrites.add(new PendingWrite(x, z, upgraded));
-                    }
+            // the write trigger is "a mapped key is present", not "an invalid key is present" —
+            // biomeswap replaces valid-but-wrong biomes too
+            if (fixMode() && biomeKeys.stream().anyMatch(replacements::containsKey)) {
+                // guard against a region header pointing at the wrong chunk (mirrors ChunkStorage.write's check)
+                if (upgraded.getInt("xPos") != x || upgraded.getInt("zPos") != z) {
+                    logger.warning(String.format("Chunk (%d, %d) has mismatched stored position (%d, %d); not fixing it",
+                        x, z, upgraded.getInt("xPos"), upgraded.getInt("zPos")));
+                } else if (extractor.replaceBiomeKeys(upgraded, replacements)) {
+                    pendingWrites.add(new PendingWrite(x, z, upgraded));
                 }
             }
 
