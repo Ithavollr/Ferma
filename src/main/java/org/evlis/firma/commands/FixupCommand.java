@@ -153,7 +153,7 @@ public class FixupCommand extends BaseCommand {
 
     @Subcommand("biomeswap")
     @CommandPermission("ferma.command.biomeswap")
-    @CommandCompletion("@worlds")
+    @CommandCompletion("@worlds @biomes @biomes")
     @Description("Replace every occurrence of one biome with another across a world's generated chunks")
     @Syntax("<world> <from> <to>")
     public void onBiomeSwap(CommandSender sender, String worldName, String from, String to) {
@@ -184,6 +184,108 @@ public class FixupCommand extends BaseCommand {
         currentScanTask.set(task);
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, task);
+    }
+
+    @Subcommand("unload")
+    @CommandPermission("ferma.command.unload")
+    @CommandCompletion("@worlds")
+    @Description("Release a world's spawn chunks (spawn chunk radius -> 0) so fix can reach them")
+    @Syntax("<world>")
+    public void onUnload(CommandSender sender, String worldName) {
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            sender.sendMessage("§cWorld not found: " + worldName);
+            return;
+        }
+
+        Integer previous = world.getGameRuleValue(org.bukkit.GameRule.SPAWN_CHUNK_RADIUS);
+
+        // record the original before touching anything — gamerules persist in level.dat across reboots
+        try {
+            Map<String, Map<String, Object>> pending = loadRestoreGamerules();
+            Map<String, Object> entry = pending.computeIfAbsent(world.getName(), k -> new LinkedHashMap<>());
+            // never overwrite a recorded original with an already-zeroed value (double unload)
+            entry.putIfAbsent("spawnChunkRadius", previous);
+            saveRestoreGamerules(pending);
+        } catch (Exception e) {
+            sender.sendMessage("§cCould not record the original gamerule value (" + e.getMessage() + "); aborting unload.");
+            return;
+        }
+
+        world.setGameRule(org.bukkit.GameRule.SPAWN_CHUNK_RADIUS, 0);
+
+        sender.sendMessage(String.format("§7Spawn chunk radius for §f%s§7 set to §f0§7 (was §f%s§7); spawn chunks unload over the next ticks.",
+            world.getName(), previous));
+        sender.sendMessage(String.format("§7Currently loaded chunks: §f%d§7. Restore afterwards with: §f/ferma restore %s",
+            world.getLoadedChunks().length, world.getName()));
+        if (!world.getPlayers().isEmpty()) {
+            sender.sendMessage("§e" + world.getPlayers().size() + " player(s) are in this world; chunks around them will stay loaded.");
+        }
+    }
+
+    @Subcommand("restore")
+    @CommandPermission("ferma.command.restore")
+    @CommandCompletion("@worlds")
+    @Description("Restore gamerules recorded by /ferma unload")
+    @Syntax("<world>")
+    public void onRestore(CommandSender sender, String worldName) {
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            sender.sendMessage("§cWorld not found: " + worldName);
+            return;
+        }
+
+        Map<String, Map<String, Object>> pending;
+        try {
+            pending = loadRestoreGamerules();
+        } catch (Exception e) {
+            sender.sendMessage("§cCould not read " + restoreGamerulesFile().getPath() + ": " + e.getMessage());
+            return;
+        }
+
+        Map<String, Object> entry = pending.remove(world.getName());
+        if (entry == null) {
+            sender.sendMessage("§7No recorded gamerules for " + world.getName() + ".");
+            return;
+        }
+
+        Object radius = entry.get("spawnChunkRadius");
+        if (radius instanceof Number n) {
+            world.setGameRule(org.bukkit.GameRule.SPAWN_CHUNK_RADIUS, n.intValue());
+            sender.sendMessage("§7Spawn chunk radius for §f" + world.getName() + "§7 restored to §f" + n.intValue() + "§7.");
+        }
+
+        try {
+            saveRestoreGamerules(pending);
+        } catch (Exception e) {
+            sender.sendMessage("§cGamerule restored, but failed to update " + restoreGamerulesFile().getPath() + ": " + e.getMessage());
+        }
+    }
+
+    private java.io.File restoreGamerulesFile() {
+        return new java.io.File(plugin.getDataFolder(), "fixup/restore-gamerules.yml");
+    }
+
+    /**
+     * Load the recorded original gamerule values: world name -> (gamerule -> value)
+     */
+    private Map<String, Map<String, Object>> loadRestoreGamerules() throws java.io.IOException {
+        java.io.File file = restoreGamerulesFile();
+        if (!file.exists()) {
+            return new LinkedHashMap<>();
+        }
+        try (java.io.FileReader reader = new java.io.FileReader(file)) {
+            Map<String, Map<String, Object>> loaded = new org.yaml.snakeyaml.Yaml().load(reader);
+            return loaded != null ? new LinkedHashMap<>(loaded) : new LinkedHashMap<>();
+        }
+    }
+
+    private void saveRestoreGamerules(Map<String, Map<String, Object>> pending) throws java.io.IOException {
+        java.io.File file = restoreGamerulesFile();
+        file.getParentFile().mkdirs();
+        try (java.io.FileWriter writer = new java.io.FileWriter(file)) {
+            new org.yaml.snakeyaml.Yaml().dump(pending, writer);
+        }
     }
 
     @Subcommand("status")

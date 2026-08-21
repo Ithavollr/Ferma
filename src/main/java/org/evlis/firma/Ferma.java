@@ -38,6 +38,10 @@ public final class Ferma extends JavaPlugin {
         
         // Register commands
         PaperCommandManager commandManager = new PaperCommandManager(this);
+        commandManager.getCommandCompletions().registerAsyncCompletion("biomes", c ->
+            io.papermc.paper.registry.RegistryAccess.registryAccess()
+                .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME)
+                .stream().map(biome -> biome.getKey().toString()).toList());
         commandManager.registerCommand(new FixupCommand(this));
         getLogger().info("Firma commands registered.");
     }
