@@ -63,6 +63,43 @@ public class FixupCommand extends BaseCommand {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, task);
     }
     
+    @Subcommand("biomelook")
+    @CommandPermission("ferma.command.biomelook")
+    @Description("Show the registry key of the biome at your position or at the given block coords")
+    @Syntax("[x y z]")
+    public void onBiomeLook(org.bukkit.entity.Player player, @Default("") String xStr, @Default("") String yStr, @Default("") String zStr) {
+        int x, y, z;
+        if (xStr.isEmpty() && yStr.isEmpty() && zStr.isEmpty()) {
+            x = player.getLocation().getBlockX();
+            y = player.getLocation().getBlockY();
+            z = player.getLocation().getBlockZ();
+        } else {
+            try {
+                x = Integer.parseInt(xStr);
+                y = Integer.parseInt(yStr);
+                z = Integer.parseInt(zStr);
+            } catch (NumberFormatException e) {
+                player.sendMessage("§cUsage: /ferma biomelook [x y z] (all three coords, whole numbers)");
+                return;
+            }
+        }
+
+        // refuse rather than look up: a biome query must never trigger a chunk load
+        if (!player.getWorld().isChunkLoaded(x >> 4, z >> 4)) {
+            player.sendMessage(String.format("§cChunk (%d, %d) is not loaded; not looking it up. Move closer to it.", x >> 4, z >> 4));
+            return;
+        }
+
+        String key = ((org.bukkit.craftbukkit.CraftWorld) player.getWorld()).getHandle()
+            .getBiome(new net.minecraft.core.BlockPos(x, y, z))
+            .unwrapKey()
+            .map(k -> k.location().toString())
+            .orElse("(unregistered inline biome)");
+        player.sendMessage(String.format("§7Biome at §f%d %d %d§7: §f%s", x, y, z, key));
+    }
+
+    // TODO: /ferma biomelook's counterpart "biomeswap <from> <to> [radius?]" — targeted biome replacement (the fixer)
+
     @Subcommand("status")
     @CommandPermission("ferma.command.status")
     @Description("Show progress of running scan/fix task")

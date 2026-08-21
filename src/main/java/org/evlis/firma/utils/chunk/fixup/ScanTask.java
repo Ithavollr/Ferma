@@ -89,11 +89,6 @@ public class ScanTask implements Runnable {
                 final int chunkX = x;
                 final int chunkZ = z;
                 
-                if (!world.isChunkGenerated(chunkX, chunkZ)) {
-                    update(chunkX, chunkZ, false);
-                    continue;
-                }
-                
                 try {
                     working.acquire();
                 } catch (InterruptedException e) {
@@ -143,6 +138,7 @@ public class ScanTask implements Runnable {
             sender.sendMessage("§cScan cancelled.");
             logger.info("Scan cancelled for world: " + world.getName());
         }
+        stopped.set(true); // mark not-running so a completed scan doesn't block the next one
     }
 
     /**
