@@ -4,7 +4,10 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 
+import net.minecraft.nbt.StringTag;
+
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 public class BiomePaletteExtractor {
@@ -30,5 +33,33 @@ public class BiomePaletteExtractor {
         }
 
         return biomeKeys;
+    }
+
+    /**
+     * Replace biome palette keys per the given mapping. Returns true if anything changed.
+     * Only palette strings are touched — data arrays and every other tag (light state!) stay intact,
+     * so a fixed chunk still loads without triggering a relight.
+     */
+    public boolean replaceBiomeKeys(CompoundTag chunkTag, Map<String, String> replacements) {
+        boolean changed = false;
+
+        ListTag sections = chunkTag.getList("sections", Tag.TAG_COMPOUND);
+        for (int i = 0; i < sections.size(); i++) {
+            CompoundTag section = sections.getCompound(i);
+            if (!section.contains("biomes", Tag.TAG_COMPOUND)) {
+                continue;
+            }
+
+            ListTag palette = section.getCompound("biomes").getList("palette", Tag.TAG_STRING);
+            for (int j = 0; j < palette.size(); j++) {
+                String replacement = replacements.get(palette.getString(j));
+                if (replacement != null) {
+                    palette.set(j, StringTag.valueOf(replacement));
+                    changed = true;
+                }
+            }
+        }
+
+        return changed;
     }
 }

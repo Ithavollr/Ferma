@@ -19,11 +19,21 @@ public class ScanReport {
     private int totalChunks = 0;
     private int errorChunks = 0;
     private final boolean verbose;
+    private Integer fixedChunks = null; // non-null => this is a fix run's report
+    private List<String> skippedLoadedChunks = null;
     
     public ScanReport(String worldName, World.Environment dimension, boolean verbose) {
         this.worldName = worldName;
         this.dimension = dimension;
         this.verbose = verbose;
+    }
+
+    /**
+     * Mark this report as a fix run's result; changes the written fields accordingly
+     */
+    public void setFixResults(int fixedChunks, List<String> skippedLoadedChunks) {
+        this.fixedChunks = fixedChunks;
+        this.skippedLoadedChunks = skippedLoadedChunks;
     }
 
     /**
@@ -68,6 +78,12 @@ public class ScanReport {
         data.put("world", worldName);
         data.put("dimension", dimension.name());
         data.put("scanned_at", Instant.now().toString());
+        if (fixedChunks == null) {
+            data.put("reviewed", false); // fix refuses to run until a human flips this after reviewing the replacements
+        } else {
+            data.put("chunks_fixed", fixedChunks);
+            data.put("chunks_skipped_loaded", skippedLoadedChunks);
+        }
         data.put("total_chunks", totalChunks);
         data.put("error_chunks", errorChunks);
         
