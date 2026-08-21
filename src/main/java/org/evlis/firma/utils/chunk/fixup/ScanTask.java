@@ -255,7 +255,7 @@ public class ScanTask implements Runnable {
         while ((w = pendingWrites.poll()) != null) {
             if (world.isChunkLoaded(w.x(), w.z())) {
                 // a loaded chunk's in-memory copy could later be flushed over our fix; skip and report
-                skippedLoaded.add(w.x() + "," + w.z());
+                skippedLoaded.add(w.x() + "," + w.z() + " (" + describeHolders(w.x(), w.z()) + ")");
                 continue;
             }
             MoonriseRegionFileIO.scheduleSave(serverLevel, w.x(), w.z(), w.tag(),
@@ -265,6 +265,26 @@ public class ScanTask implements Runnable {
                 // backpressure: don't let thousands of pending tags pile up in the IO queue
                 MoonriseRegionFileIO.partialFlush(serverLevel, MAX_INFLIGHT_WRITES);
             }
+        }
+    }
+
+    /**
+     * Best-effort description of what holds a loaded chunk: plugin chunk tickets and force-loading.
+     * A vanilla ticket (spawn, player) shows as unknown — the Bukkit API doesn't expose those.
+     */
+    private String describeHolders(int x, int z) {
+        try {
+            List<String> holders = new ArrayList<>();
+            for (org.bukkit.plugin.Plugin ticketHolder : world.getPluginChunkTickets(x, z)) {
+                holders.add("plugin:" + ticketHolder.getName());
+            }
+            if (world.getForceLoadedChunks().stream().anyMatch(c -> c.getX() == x && c.getZ() == z)) {
+                holders.add("forceloaded");
+            }
+            return holders.isEmpty() ? "holder unknown: vanilla ticket" : String.join("+", holders);
+        } catch (Throwable t) {
+            // Bukkit ticket APIs aren't guaranteed async-safe; holder info is optional, never fatal
+            return "holder lookup failed: " + t.getMessage();
         }
     }
 
