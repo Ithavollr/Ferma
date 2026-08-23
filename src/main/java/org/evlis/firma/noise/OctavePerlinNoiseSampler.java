@@ -1,38 +1,36 @@
 package org.evlis.firma.noise;
 
-import java.util.stream.IntStream;
-
 /**
- * Octave Perlin noise sampler - combines multiple Perlin samplers at different frequencies.
- * Each octave doubles frequency and typically halves amplitude.
+ * Octave Perlin noise sampler mirroring vanilla
+ * {@code net.minecraft.world.level.levelgen.synth.PerlinNoise}: frequency starts at
+ * {@code 2^firstOctave} and doubles per octave, contribution weight starts at
+ * {@code 2^(n-1)/(2^n - 1)} and halves per octave, each scaled by its configured
+ * amplitude (zero-amplitude octaves are skipped). Octaves above 0 are rejected,
+ * as in vanilla.
+ *
+ * <p>The historical pre-fix octave math lives on, frozen, in
+ * {@link ShatteredClimateFunction}.
  */
 public class OctavePerlinNoiseSampler {
     private final PerlinNoiseSampler[] octaves;
-    private final double lacunarity;
-    private final double persistence;
+    private final double[] amplitudes;
+    private final double lowestFreqInputFactor;
+    private final double lowestFreqValueFactor;
 
-    public OctavePerlinNoiseSampler(XoroshiroRandomSource random, IntStream octaves) {
-        this(random, octaves.toArray(), 2.0, 0.5);
-    }
-
-    public OctavePerlinNoiseSampler(XoroshiroRandomSource random, int[] octaves) {
-        this(random, octaves, 2.0, 0.5);
-    }
-
-    public OctavePerlinNoiseSampler(XoroshiroRandomSource random, int[] octaves, 
-                                   double lacunarity, double persistence) {
-        this.lacunarity = lacunarity;
-        this.persistence = persistence;
-        this.octaves = new PerlinNoiseSampler[octaves.length];
-        
-        for (int i = 0; i < octaves.length; i++) {
-            int octave = octaves[i];
-            if (octave >= 0) {
-                this.octaves[i] = null;
-            } else {
-                this.octaves[i] = new PerlinNoiseSampler(random);
-            }
+    public OctavePerlinNoiseSampler(XoroshiroRandomSource random, int firstOctave, double[] amplitudes) {
+        int highestOctave = firstOctave + amplitudes.length - 1;
+        if (highestOctave > 0) {
+            throw new IllegalArgumentException(
+                "Positive octaves are not supported (first_octave " + firstOctave + " with "
+                + amplitudes.length + " amplitudes reaches octave " + highestOctave + ")");
         }
+        this.amplitudes = amplitudes.clone();
+        this.octaves = new PerlinNoiseSampler[amplitudes.length];
+        for (int i = 0; i < amplitudes.length; i++) {
+            this.octaves[i] = amplitudes[i] != 0.0 ? new PerlinNoiseSampler(random) : null;
+        }
+        this.lowestFreqInputFactor = Math.pow(2.0, firstOctave);
+        this.lowestFreqValueFactor = Math.pow(2.0, amplitudes.length - 1) / (Math.pow(2.0, amplitudes.length) - 1.0);
     }
 
     /**
@@ -43,38 +41,29 @@ public class OctavePerlinNoiseSampler {
     }
 
     /**
-     * Sample with Y scaling for terrain generation.
+     * Sample with Y scaling for terrain generation. Vanilla PerlinNoise.getValue semantics.
      */
     public double sample(double x, double y, double z, double yScale, double yMax) {
         double value = 0.0;
-        double amplitude = 1.0;
-        double frequency = 1.0;
+        double frequency = this.lowestFreqInputFactor;
+        double weight = this.lowestFreqValueFactor;
 
-        for (PerlinNoiseSampler octave : this.octaves) {
+        for (int i = 0; i < this.octaves.length; i++) {
+            PerlinNoiseSampler octave = this.octaves[i];
             if (octave != null) {
-                value += octave.sample(
+                value += this.amplitudes[i] * weight * octave.sample(
                     maintainPrecision(x * frequency),
-                    maintainPrecision(y * frequency), 
+                    maintainPrecision(y * frequency),
                     maintainPrecision(z * frequency),
                     yScale * frequency,
                     yMax * frequency
-                ) / amplitude;
+                );
             }
-            frequency *= this.lacunarity;
-            amplitude *= this.persistence;
+            frequency *= 2.0;
+            weight /= 2.0;
         }
 
         return value;
-    }
-
-    /**
-     * Get a specific octave sampler, or null if it doesn't exist.
-     */
-    public PerlinNoiseSampler getOctave(int octave) {
-        if (octave >= 0 || octave >= this.octaves.length) {
-            return null;
-        }
-        return this.octaves[octave];
     }
 
     /**

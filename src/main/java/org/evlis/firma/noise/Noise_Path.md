@@ -100,7 +100,7 @@ Steps:
 - Take the **wired** router via `randomState.router()` (NOT `settings.noiseRouter()` — that one is un-wired and would yield broken aquifer/fluid noise -> "world full of water" bug).
 - Build a new `NoiseRouter` via `FirmaNoiseRouter.patchClimateFunctions(wiredRouter, randomState, seed, pack)`:
   - For each of the 5 configurable climate parameters (`temperature`, `humidity` (vanilla `vegetation`), `continentalness` (`continents`), `erosion`, `weirdness` (`ridges`)):
-    - If `pack.hasClimateConfig(param)` -> `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / etc.).
+    - If `pack.hasClimateConfig(param)` -> `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / Shattered / etc.).
     - Otherwise -> pass through the **wired vanilla function** unchanged (no wrapper, no `Identity` — avoids per-call `SinglePointContext` allocation).
   - **Terrain-shape fields are rebuilt** from patched climate functions (see §2.4):
     - `depth` = `yClampedGradient(-64, 320, 1.5, -1.5) + rebuiltOffset` (derived, not pack-configurable)
@@ -248,6 +248,37 @@ finalDensity = min(postProcessed, noodle)
 
 ---
 
+## 2.5 Climate noise sampling semantics
+
+The `perlin` / `octave_perlin` / `double_perlin` pack types are backed by Firma's own port of
+vanilla's noise stack (`PerlinNoiseSampler` -> `OctavePerlinNoiseSampler` -> `DoublePerlinNoiseSampler`
+-> `DoublePerlinClimateFunction`), seeded via `PositionalRandomFactory` rather than vanilla's
+`NoiseWiringHelper` (see §4). The octave math mirrors vanilla `PerlinNoise`/`NormalNoise`:
+
+- Frequency starts at `2^firstOctave` and doubles per octave; weight starts at
+  `2^(n-1)/(2^n - 1)` and halves, each octave scaled by its configured amplitude
+  (zero-amplitude octaves are skipped). Octaves above 0 are rejected loudly, as in vanilla.
+- The double-perlin value factor is `(1/6) / expectedDeviation(span)` with
+  `expectedDeviation(s) = 0.1 * (1 + 1/(s+1))`, span = index distance between first and
+  last non-zero amplitude (vanilla `NormalNoise`).
+- Known divergence from vanilla: `DoublePerlinClimateFunction.compute()` samples its shift
+  noise at raw `(x, y, z)` (4x vanilla's shift frequency, y-dependent) instead of vanilla's
+  `ShiftA`/`ShiftB` form `noise(x*0.25, 0, z*0.25) * 4.0` applied after xz scaling. Fix pending.
+
+### The `shattered` type (frozen)
+
+The original implementation of this octave math was buggy — frequency always started at 1.0
+(ignoring `first_octave`), weights doubled per octave instead of halving, and amplitude values
+were ignored — making every configured noise per-block decorrelated and producing "porcupine"
+terrain: 1-2 block wide pillars hundreds of blocks tall. That output was deemed worth keeping.
+The buggy pipeline was extracted verbatim into `ShatteredClimateFunction` (config type
+`shattered`, same fields as `double_perlin`) before the default path was fixed to vanilla
+semantics. The class is FROZEN: `FermaClimateFunctionTest.shattered_matchesFrozenReference`
+pins its output bit-for-bit against an independent copy of the historical algorithm, and its
+decorrelation signature is guarded by `shattered_isPerBlockDecorrelated`.
+
+---
+
 ## 3. Summary of Firma's overrides
 
 | Layer | What we touch | How | Why |
@@ -265,7 +296,7 @@ The corruption hazard: if any of our custom `DensityFunction`s ever ends up insi
 We close this hazard with three layers:
 
 1. **No mutation of saved fields.** `NoiseBasedChunkGenerator.settings` is never touched. All Firma noise patches go into `RandomState` (transient — rebuilt every server start from the unchanged `settings`). This is the primary defense.
-2. **Fail-loud codecs.** Every Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `PeaksAndValleysFunction`) declares its `codec()` via `UnserializableMapCodec.of(name, recoveryDefault)`. That codec returns `DataResult.error(...)` on **encode**, so any future regression that re-introduces a serialization path errors out at the first attempted write. The error propagates through Mojang's `RecordBuilder` and `resultOrPartial(...)` cannot salvage it into `{}` — the save aborts loudly with a stack trace naming the offending Firma class. `level.dat` is left untouched.
+2. **Fail-loud codecs.** Every Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `RadialGradientClimateFunction`, `ShatteredClimateFunction`, `PeaksAndValleysFunction`) declares its `codec()` via `UnserializableMapCodec.of(name, recoveryDefault)`. That codec returns `DataResult.error(...)` on **encode**, so any future regression that re-introduces a serialization path errors out at the first attempted write. The error propagates through Mojang's `RecordBuilder` and `resultOrPartial(...)` cannot salvage it into `{}` — the save aborts loudly with a stack trace naming the offending Firma class. `level.dat` is left untouched.
 3. **Permissive decode.** The same codec returns a safe sentinel (e.g. `Constant(0.0)`) on decode. This is purely a recovery affordance: if a `level.dat` from a buggy past version somehow contains our nodes, the world still loads. Decode is never expected to fire in normal operation since these classes are never registered in `BuiltInRegistries.DENSITY_FUNCTION_TYPE`.
 
 Together, layers (1) + (2) make silent corruption unreachable: either we never serialize (layer 1), or we error out before producing partial output (layer 2). Layer (3) is the parachute.
@@ -275,7 +306,7 @@ Together, layers (1) + (2) make silent corruption unreachable: either we never s
 `./gradlew test` runs three guards that fail the build if any layer above is broken:
 
 - `UnserializableMapCodecTest` (pure DFU): asserts `UnserializableMapCodec.of(...)` errors on encode and recovers on decode.
-- `FirmaDensityFunctionCodecGuardTest` (real NMS classes, no mocking): instantiates each Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `PeaksAndValleysFunction`) and asserts `df.codec().codec().codec().encodeStart(JsonOps.INSTANCE, df).isError()`. If anyone replaces the failing codec with `MapCodec.unit(...)`, this test breaks.
+- `FirmaDensityFunctionCodecGuardTest` (real NMS classes, no mocking): instantiates each Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `RadialGradientClimateFunction`, `ShatteredClimateFunction`, `PeaksAndValleysFunction`) and asserts `df.codec().codec().codec().encodeStart(JsonOps.INSTANCE, df).isError()`. If anyone replaces the failing codec with `MapCodec.unit(...)`, this test breaks.
 - `NMSInjectListenerSafetyTest` (source-level static analysis): scans `NMSInjectListener.java` for the historical corruption patterns:
   - reflective access to `NoiseBasedChunkGenerator.class.getDeclaredField("settings")`
   - `Holder.direct(...)` paired with `NoiseGeneratorSettings`

@@ -2,8 +2,13 @@ package org.evlis.firma.noise;
 
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
+import net.minecraft.world.level.levelgen.DensityFunction;
+import org.evlis.firma.pack.ClimateFunctionConfig;
+import org.evlis.firma.pack.ClimateFunctionFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -250,6 +255,201 @@ class FermaClimateFunctionTest {
 
         assertEquals(-2.0, perlin.minValue(), 0.0001);
         assertEquals(3.0, perlin.maxValue(), 0.0001);
+    }
+
+    /**
+     * The "shattered" type intentionally preserves the historical octave math whose
+     * high-frequency-dominated output decorrelates between adjacent blocks (the
+     * "porcupine" terrain). This guards its functional signature: neighboring samples
+     * must swing wildly, which correct vanilla-style octave noise (base wavelength
+     * 2^9 blocks here) never does over a 16-block span.
+     */
+    @Test
+    void shattered_isPerBlockDecorrelated() {
+        DensityFunction shattered = buildShattered(4242L);
+
+        double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
+        for (int x = 0; x < 16; x++) {
+            double v = shattered.compute(new DensityFunction.SinglePointContext(x, 0, 0));
+            min = Math.min(min, v);
+            max = Math.max(max, v);
+        }
+
+        assertTrue(max - min > 1.0,
+            "Shattered noise must stay per-block decorrelated (porcupine terrain); range over 16 adjacent blocks was " + (max - min));
+    }
+
+    @Test
+    void shattered_isDeterministic() {
+        DensityFunction first = buildShattered(4242L);
+        DensityFunction second = buildShattered(4242L);
+
+        for (int x = 0; x < 16; x++) {
+            DensityFunction.SinglePointContext pos = new DensityFunction.SinglePointContext(x, 0, 0);
+            assertEquals(first.compute(pos), second.compute(pos), 0.0,
+                "Same seed and config must reproduce the identical shattered field");
+        }
+    }
+
+    /**
+     * Characterization freeze: ShatteredClimateFunction must reproduce the historical
+     * pre-fix double-perlin pipeline bit-for-bit. The reference below is an independent
+     * verbatim copy of that algorithm (legacy octave loop, fixed 1/6*10/9 factor,
+     * raw-coordinate y-dependent shift, clamp), including the exact RNG derivation the
+     * factory used. Any change to the frozen class fails this with delta 0.0.
+     */
+    @Test
+    void shattered_matchesFrozenReference() {
+        DensityFunction shattered = buildShattered(4242L);
+
+        // Mirror ClimateFunctionFactory.build's seed derivation for the same inputs.
+        PositionalRandomFactory factory = new PositionalRandomFactory(
+            4242L ^ ("shattered_test" + ":" + "continentalness").hashCode());
+        LegacyDoublePerlin main = new LegacyDoublePerlin(factory.fromKey("shattered"), -9, 9);
+        LegacyDoublePerlin shiftX = new LegacyDoublePerlin(factory.fromKey("minecraft:shift_x"), -3, 4);
+        LegacyDoublePerlin shiftZ = new LegacyDoublePerlin(factory.fromKey("minecraft:shift_z"), -3, 4);
+
+        int[] coords = {-3000, -7, 0, 5, 1234};
+        for (int x : coords) {
+            for (int z : coords) {
+                for (int y : new int[]{0, 64}) {
+                    double sx = shiftX.sample(x, y, z) * 4.0;
+                    double sz = shiftZ.sample(x, y, z) * 4.0;
+                    double expected = Math.clamp(
+                        main.sample(x * 0.25 + sx, y * 0.0, z * 0.25 + sz), -1000.0, 1000.0);
+
+                    double actual = shattered.compute(new DensityFunction.SinglePointContext(x, y, z));
+                    assertEquals(expected, actual, 0.0,
+                        "Frozen shattered output changed at (" + x + ", " + y + ", " + z + ")");
+                }
+            }
+        }
+    }
+
+    /** Verbatim copy of the historical (pre-vanilla-fix) double perlin pipeline. */
+    private static final class LegacyDoublePerlin {
+        private final PerlinNoiseSampler[] first;
+        private final PerlinNoiseSampler[] second;
+
+        LegacyDoublePerlin(XoroshiroRandomSource random, int firstOctave, int octaveCount) {
+            this.first = createOctaves(random, firstOctave, octaveCount);
+            this.second = createOctaves(new XoroshiroRandomSource(random.nextLong()), firstOctave, octaveCount);
+        }
+
+        private static PerlinNoiseSampler[] createOctaves(XoroshiroRandomSource random, int firstOctave, int octaveCount) {
+            PerlinNoiseSampler[] octaves = new PerlinNoiseSampler[octaveCount];
+            for (int i = 0; i < octaveCount; i++) {
+                octaves[i] = (firstOctave + i >= 0) ? null : new PerlinNoiseSampler(random);
+            }
+            return octaves;
+        }
+
+        double sample(double x, double y, double z) {
+            double offset = 1.0181268882175227;
+            return (sampleOctaves(first, x, y, z) + sampleOctaves(second, x * offset, y * offset, z * offset))
+                * (0.16666666666666666 * 1.1111111111111112);
+        }
+
+        private static double sampleOctaves(PerlinNoiseSampler[] octaves, double x, double y, double z) {
+            double value = 0.0, amplitude = 1.0, frequency = 1.0;
+            for (PerlinNoiseSampler octave : octaves) {
+                if (octave != null) {
+                    value += octave.sample(
+                        wrap(x * frequency), wrap(y * frequency), wrap(z * frequency),
+                        0.0, 0.0) / amplitude;
+                }
+                frequency *= 2.0;
+                amplitude *= 0.5;
+            }
+            return value;
+        }
+
+        private static double wrap(double value) {
+            return value - Math.floor(value / 3.3554432E7) * 3.3554432E7;
+        }
+    }
+
+    /** Builds a continentalness-like shattered function through the full config->factory path. */
+    private static DensityFunction buildShattered(long seed) {
+        ClimateFunctionConfig config = new ClimateFunctionConfig.Shattered(
+            -9,
+            List.of(1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0),
+            0.25,
+            0.0,
+            -1000.0,  // wide bounds: observe the raw field, not the clamp
+            1000.0
+        );
+        return new ClimateFunctionFactory(seed, "shattered_test").build(config, "continentalness", null);
+    }
+
+    /**
+     * With vanilla octave semantics, a first_octave -9 noise has a base wavelength of
+     * 2^9 blocks and halving weights, so neighboring blocks must be strongly correlated —
+     * the opposite of the shattered/porcupine field. The pre-fix math (frequency from 1.0,
+     * doubling weights) produced per-block swings in the tens and fails this immediately.
+     */
+    @Test
+    void doublePerlin_isSmoothAtVanillaScale() {
+        PositionalRandomFactory factory = new PositionalRandomFactory(2024L);
+        DoublePerlinClimateFunction perlin = new DoublePerlinClimateFunction(
+            factory, "vanilla_smoothness", -9,
+            new double[]{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+            0.25, 0.0,
+            -10.0, 10.0   // wide bounds: observe the raw field, not the clamp
+        );
+
+        double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
+        for (int x = 0; x < 16; x++) {
+            double v = perlin.compute(x, 0, 0);
+            min = Math.min(min, v);
+            max = Math.max(max, v);
+        }
+        assertTrue(max - min < 0.5,
+            "Adjacent blocks must be correlated at wavelength 512; range over 16 blocks was " + (max - min));
+
+        // Guard against a degenerate flat/zero field: widely spaced samples must differ.
+        double farMin = Double.POSITIVE_INFINITY, farMax = Double.NEGATIVE_INFINITY;
+        for (int x = 0; x <= 12288; x += 4096) {
+            double v = perlin.compute(x, 0, 0);
+            farMin = Math.min(farMin, v);
+            farMax = Math.max(farMax, v);
+        }
+        assertTrue(farMax - farMin > 1.0e-6, "Noise must vary across base-wavelength distances");
+    }
+
+    /**
+     * fillArray must produce the same values as compute() at the same coordinates —
+     * historically it carried a second, divergent (and unclamped) sampling formula.
+     */
+    @Test
+    void doublePerlin_fillArray_matchesCompute() {
+        PositionalRandomFactory factory = new PositionalRandomFactory(31337L);
+        DoublePerlinClimateFunction perlin = new DoublePerlinClimateFunction(
+            factory, "fill_array_test", -7, new double[]{1.0, 1.0}, 0.25, 0.0, -0.5, 0.5
+        );
+
+        int n = 16;
+        DensityFunction.ContextProvider provider = new DensityFunction.ContextProvider() {
+            @Override
+            public DensityFunction.FunctionContext forIndex(int i) {
+                return new DensityFunction.SinglePointContext(i * 3, 64, i * 7);
+            }
+
+            @Override
+            public void fillAllDirectly(double[] values, DensityFunction function) {
+                for (int i = 0; i < values.length; i++) {
+                    values[i] = function.compute(forIndex(i));
+                }
+            }
+        };
+
+        double[] filled = new double[n];
+        perlin.fillArray(filled, provider);
+
+        for (int i = 0; i < n; i++) {
+            assertEquals(perlin.compute(provider.forIndex(i)), filled[i], 0.0,
+                "fillArray diverged from compute() at index " + i);
+        }
     }
 
     @Test

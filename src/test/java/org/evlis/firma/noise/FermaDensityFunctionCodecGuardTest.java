@@ -69,6 +69,20 @@ class FermaDensityFunctionCodecGuardTest {
     }
 
     @Test
+    void shatteredClimate_codecErrorsOnEncode() {
+        ShatteredClimateFunction df = new ShatteredClimateFunction(
+            new PositionalRandomFactory(0L),
+            -9,
+            9,
+            0.25,
+            0.0,
+            -1.0,
+            1.0
+        );
+        assertCodecErrorsOnEncode(df);
+    }
+
+    @Test
     void radialGradient_codecErrorsOnEncode() {
         // Bidirectional radial gradient: start 1.0 at center, fall -0.0002 per block, clamp at -1.05
         RadialGradientClimateFunction df = new RadialGradientClimateFunction(

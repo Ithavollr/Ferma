@@ -54,6 +54,17 @@ public sealed interface ClimateFunctionConfig {
     }
     
     /**
+     * Shattered noise — the frozen pre-fix octave math (frequency always starts at 1.0,
+     * octave weights double instead of halve, configured amplitudes ignored). Produces
+     * per-block decorrelated "porcupine" climate. Same fields as {@link DoublePerlin}.
+     */
+    record Shattered(int firstOctave, List<Double> amplitudes, double xzScale, double yScale, double minValue, double maxValue)
+            implements ClimateFunctionConfig {
+        @Override
+        public String type() { return "shattered"; }
+    }
+
+    /**
      * Shifted noise - wraps another noise with XZ position shifts.
      */
     record ShiftedNoise(ClimateFunctionConfig inner, ShiftConfig shiftX, ShiftConfig shiftZ) 

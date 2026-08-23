@@ -28,7 +28,7 @@ public class DoublePerlinClimateFunction implements FermaClimateFunction {
         // Main noise uses a unique seed derived from noiseId
         XoroshiroRandomSource mainRandom = factory.fromKey(noiseId);
         this.mainSampler = new DoublePerlinNoiseSampler(mainRandom, firstOctave, amplitudes);
-        
+
         // Shift noises use the SHIFT noise parameters
         XoroshiroRandomSource shiftRandomX = factory.fromKey("minecraft:shift_x");
         XoroshiroRandomSource shiftRandomZ = factory.fromKey("minecraft:shift_z");
@@ -59,23 +59,9 @@ public class DoublePerlinClimateFunction implements FermaClimateFunction {
     
     @Override
     public void fillArray(double[] array, DensityFunction.ContextProvider contextProvider) {
-        // Custom batch processing using forIndex
-        for (int i = 0; i < array.length; i++) {
-            DensityFunction.FunctionContext context = contextProvider.forIndex(i);
-            int x = context.blockX();
-            int y = context.blockY();
-            int z = context.blockZ();
-            
-            // Compute shifted coordinates
-            double shiftX = shiftXSampler.sample(x * 0.25, 0, z * 0.25) * 8.0;
-            double shiftZ = shiftZSampler.sample(x * 0.25, 0, z * 0.25) * 8.0;
-            
-            double nx = (x + shiftX) * xzScale;
-            double ny = y * yScale;
-            double nz = (z + shiftZ) * xzScale;
-            
-            array[i] = mainSampler.sample(nx, ny, nz);
-        }
+        // Delegate to compute() per position (vanilla's idiom for shifted noise) so batch
+        // and single-point sampling share one formula, including the min/max clamp.
+        contextProvider.fillAllDirectly(array, this);
     }
     
     @Override

@@ -1,7 +1,5 @@
 package org.evlis.firma.noise;
 
-import java.util.stream.IntStream;
-
 /**
  * Double Perlin noise sampler - combines two octave samplers with slight offset
  * to mask grid artifacts. This is the workhorse for Minecraft's climate noise.
@@ -12,20 +10,29 @@ public class DoublePerlinNoiseSampler {
     private final double amplitude;
 
     /**
-     * Create a DoublePerlinNoiseSampler with the given octaves.
-     * The amplitude factor normalizes output back to [-1, 1] range.
+     * Create a DoublePerlinNoiseSampler with the given octaves, matching vanilla
+     * NormalNoise normalization.
      */
     public DoublePerlinNoiseSampler(XoroshiroRandomSource random, int firstOctave, double[] amplitudes) {
-        this.firstSampler = new OctavePerlinNoiseSampler(random, 
-            IntStream.rangeClosed(firstOctave, firstOctave + amplitudes.length - 1).toArray());
-        
-        // Second sampler uses a different random instance with offset
+        // Vanilla NormalNoise semantics: value factor = (1/6) / expectedDeviation(span),
+        // span = index distance between first and last non-zero amplitude.
+        this.firstSampler = new OctavePerlinNoiseSampler(random, firstOctave, amplitudes);
         XoroshiroRandomSource random2 = new XoroshiroRandomSource(random.nextLong());
-        this.secondSampler = new OctavePerlinNoiseSampler(random2,
-            IntStream.rangeClosed(firstOctave, firstOctave + amplitudes.length - 1).toArray());
-        
-        // Amplitude factor from vanilla: 1/6 * (10/9)
-        this.amplitude = 0.16666666666666666 * 1.1111111111111112; // ~0.18518518518518517
+        this.secondSampler = new OctavePerlinNoiseSampler(random2, firstOctave, amplitudes);
+
+        int firstNonzero = Integer.MAX_VALUE;
+        int lastNonzero = Integer.MIN_VALUE;
+        for (int i = 0; i < amplitudes.length; i++) {
+            if (amplitudes[i] != 0.0) {
+                firstNonzero = Math.min(firstNonzero, i);
+                lastNonzero = Math.max(lastNonzero, i);
+            }
+        }
+        if (lastNonzero < firstNonzero) {
+            throw new IllegalArgumentException("amplitudes must contain at least one non-zero value");
+        }
+        double expectedDeviation = 0.1 * (1.0 + 1.0 / (lastNonzero - firstNonzero + 1));
+        this.amplitude = 0.16666666666666666 / expectedDeviation;
     }
 
     /**

@@ -278,14 +278,16 @@ public class PackLoader {
                 double yScale = ((Number) config.getOrDefault("y_scale", 1.0)).doubleValue();
                 yield new ClimateFunctionConfig.OctavePerlin(firstOctave, amplitudes, xzScale, yScale);
             }
-            case "double_perlin" -> {
+            case "double_perlin", "shattered" -> {
                 int firstOctave = ((Number) config.getOrDefault("first_octave", 0)).intValue();
                 List<Double> amplitudes = parseAmplitudes(config.get("amplitudes"));
                 double xzScale = ((Number) config.getOrDefault("xz_scale", 1.0)).doubleValue();
                 double yScale = ((Number) config.getOrDefault("y_scale", 1.0)).doubleValue();
                 double minValue = ((Number) config.getOrDefault("min_value", -1.0)).doubleValue();
                 double maxValue = ((Number) config.getOrDefault("max_value", 1.0)).doubleValue();
-                yield new ClimateFunctionConfig.DoublePerlin(firstOctave, amplitudes, xzScale, yScale, minValue, maxValue);
+                yield type.equals("shattered")
+                    ? new ClimateFunctionConfig.Shattered(firstOctave, amplitudes, xzScale, yScale, minValue, maxValue)
+                    : new ClimateFunctionConfig.DoublePerlin(firstOctave, amplitudes, xzScale, yScale, minValue, maxValue);
             }
             case "shifted_noise" -> {
                 // Parse inner noise config
@@ -362,7 +364,7 @@ public class PackLoader {
      * Extract default packs from jar resources to the packs directory.
      */
     private void extractDefaultPacks(File packsDir) {
-        String[] defaultPacks = {"passthrough", "frozen_world", "fully_frozen", "custom_noise", "high_mountain"};
+        String[] defaultPacks = {"passthrough", "frozen_world", "fully_frozen", "custom_noise", "high_mountain", "vanilla_noise"};
         
         for (String packId : defaultPacks) {
             try {

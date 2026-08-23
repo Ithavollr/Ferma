@@ -1,0 +1,67 @@
+# Vanilla Noise Pack
+# True-to-vanilla overworld climate: every parameter reproduces the vanilla noise_router
+# exactly as dumped from the server jar (components/DefaultPack):
+#   - octaves/amplitudes: data/minecraft/worldgen/noise/{temperature,vegetation,continentalness,erosion,ridge}.json
+#   - xz_scale 0.25 / y_scale 0.0: noise_router entries in worldgen/noise_settings/overworld.json
+#   - min/max: the wired vanilla DensityFunction's reported bounds, computed per
+#     PerlinNoise.edgeValue(2.0) and NormalNoise.valueFactor. Vanilla never clamps climate
+#     noise, so these bounds exist to report vanilla-faithful ranges to the terrain splines
+#     while keeping the clamp out of reach. Leaving them unset (defaults +-1.0) clips
+#     continentalness below -1.0 (mushroom fields live at -1.2..-1.05) and weirdness at
+#     +-1.0 (the ridges fold needs +-1.5) - that was the visible flaw in custom_noise.
+#
+# Note: same world seed will NOT reproduce a vanilla world's layout - Ferma seeds its
+# samplers independently of vanilla's NoiseWiringHelper. The character is vanilla; the
+# pattern is Ferma's own.
+
+schema_version: 1
+id: vanilla_noise
+name: "Vanilla Noise"
+description: "True-to-vanilla overworld climate generation"
+type: noise
+
+climate:
+  temperature:
+    type: double_perlin
+    first_octave: -10
+    amplitudes: [1.5, 0.0, 1.0, 0.0, 0.0, 0.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+    min_value: -4.44445
+    max_value: 4.44445
+
+  humidity:
+    type: double_perlin
+    first_octave: -8
+    amplitudes: [1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+    min_value: -3.38625
+    max_value: 3.38625
+
+  continentalness:
+    type: double_perlin
+    first_octave: -9
+    amplitudes: [1.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+    min_value: -7.31507
+    max_value: 7.31507
+
+  erosion:
+    type: double_perlin
+    first_octave: -9
+    amplitudes: [1.0, 1.0, 0.0, 1.0, 1.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+    min_value: -4.83872
+    max_value: 4.83872
+
+  weirdness:
+    type: double_perlin
+    first_octave: -7
+    amplitudes: [1.0, 2.0, 1.0, 0.0, 0.0, 0.0]
+    xz_scale: 0.25
+    y_scale: 0.0
+    min_value: -5.71429
+    max_value: 5.71429

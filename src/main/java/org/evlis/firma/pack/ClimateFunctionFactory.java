@@ -5,6 +5,7 @@ import org.evlis.firma.noise.DoublePerlinClimateFunction;
 import org.evlis.firma.noise.FermaClimateFunction;
 import org.evlis.firma.noise.PositionalRandomFactory;
 import org.evlis.firma.noise.RadialGradientClimateFunction;
+import org.evlis.firma.noise.ShatteredClimateFunction;
 
 /**
  * Factory for building FirmaClimateFunction instances from ClimateFunctionConfig.
@@ -39,6 +40,7 @@ public class ClimateFunctionFactory {
             case ClimateFunctionConfig.Perlin p -> buildPerlin(p, factory);
             case ClimateFunctionConfig.OctavePerlin o -> buildOctavePerlin(o, factory);
             case ClimateFunctionConfig.DoublePerlin d -> buildDoublePerlin(d, factory);
+            case ClimateFunctionConfig.Shattered s -> buildShattered(s, factory);
             case ClimateFunctionConfig.ShiftedNoise s -> buildShiftedNoise(s, factory, vanilla);
             case ClimateFunctionConfig.WeirdnessToRidges w -> buildWeirdnessToRidges(w, factory, vanilla);
             case ClimateFunctionConfig.RadialGradient g -> buildRadialGradient(g);
@@ -88,6 +90,19 @@ public class ClimateFunctionFactory {
         );
     }
     
+    private DensityFunction buildShattered(ClimateFunctionConfig.Shattered config, PositionalRandomFactory factory) {
+        // The frozen porcupine pipeline; amplitude values were historically ignored, only the count matters.
+        return new ShatteredClimateFunction(
+            factory,
+            config.firstOctave(),
+            config.amplitudes().size(),
+            config.xzScale(),
+            config.yScale(),
+            config.minValue(),
+            config.maxValue()
+        );
+    }
+
     private DensityFunction buildShiftedNoise(
             ClimateFunctionConfig.ShiftedNoise config, 
             PositionalRandomFactory factory,
