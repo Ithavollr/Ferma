@@ -1,0 +1,41 @@
+# Layered Nether — demo pack for altitude-banded climate (y_gradient).
+#
+# Intended for a nether-settings world:
+#   /mv create <name> nether --generator Ferma:layered_nether
+#
+# Vanilla's nether is climate-flat vertically: temperature and vegetation are sampled with
+# y_scale 0.0, so a biome column runs unbroken from bedrock to roof. Replacing temperature
+# with a vertical gradient stratifies the five nether biomes by altitude, since they are
+# distinguished by temperature/humidity:
+#   basalt_deltas  T=-0.5 | nether_wastes / soul_sand_valley / warped_forest  T=0.0
+#   crimson_forest T= 0.4
+# Ramping temperature -0.5 -> 0.4 over y 0..128 walks through those bands bottom to top.
+# Humidity is left unconfigured, so it keeps vanilla's horizontal variation and still
+# separates soul sand valley / wastes / warped forest within each band.
+
+schema_version: 1
+id: layered_nether
+name: "Layered Nether"
+description: "Altitude-banded nether biomes via a vertical temperature gradient"
+type: noise
+
+climate:
+  temperature:
+    type: y_gradient
+    from_y: 0
+    from_value: -0.5
+    to_y: 128
+    to_value: 0.4
+
+  # Depth is configurable on decoupled settings (caves/floating_islands/nether) because it
+  # is a plain constant there rather than a composite of the offset splines. Set here to
+  # exercise that path; note it does NOT move vanilla nether biomes, which all carry depth
+  # target 0.0 — an equal distance penalty for every candidate cannot change the nearest.
+  # It takes effect where candidate biomes differ in depth (caves-settings worlds using the
+  # overworld biome set, or datapack biomes with varied depth targets).
+  depth:
+    type: y_gradient
+    from_y: 0
+    from_value: 1.0
+    to_y: 128
+    to_value: -1.0
