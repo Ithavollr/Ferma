@@ -1,6 +1,6 @@
-# Noise Path — Vanilla vs. Firma
+# Noise Path — Vanilla vs. Ferma
 
-A map of every place noise/biomes flow through, what Firma overrides, and why.
+A map of every place noise/biomes flow through, what Ferma overrides, and why.
 All file paths are absolute; line numbers reflect current state at time of writing.
 
 ---
@@ -11,9 +11,9 @@ All file paths are absolute; line numbers reflect current state at time of writi
 - **Codec**: a Mojang DataFixerUpper serializer/deserializer (`com.mojang.serialization.Codec` / `KeyDispatchDataCodec`). Every vanilla `DensityFunction` declares one so it can round-trip through `level.dat` and worldgen JSON. 
 "round-trip" in this context means saving to level.dat (`NoiseGeneratorSettings` encodes via codec -> NBT format -> `level.dat` on disk), adn reloading from disk (`level.dat` -> NBT format -> decoded via same codec and fed 
 to `NoiseGeneratorSettings`). `NoiseRouter` exists inside `NoiseGeneratorSettings` (`NoiseRouter.CODEC.fieldOf("noise_router")`), so every codec inside NoiseRouter (there are 15, and they are all `DensityFunction` codecs) must be 
-preserved for serialization in order to never break `level.dat`. Firma avoids ever needing to deal with codec serialization by never modifying `NoiseGeneratorSettings`, only touching `RandomState` fields that are rebuilt every startup. 
-If code is ever added that tries to serialize a Firma `RandomState`, it will run into an instance of `UnserializableMapCodec` and crash out, instead of writing `{}` and corrupting `level.dat`.
-- **Wrapping**: one `DensityFunction` holding another and forwarding calls to it (e.g. `FirmaClimateFunction.Identity` wraps a vanilla function). The concern with wrapping on hot paths like `finalDensity` 
+preserved for serialization in order to never break `level.dat`. Ferma avoids ever needing to deal with codec serialization by never modifying `NoiseGeneratorSettings`, only touching `RandomState` fields that are rebuilt every startup. 
+If code is ever added that tries to serialize a Ferma `RandomState`, it will run into an instance of `UnserializableMapCodec` and crash out, instead of writing `{}` and corrupting `level.dat`.
+- **Wrapping**: one `DensityFunction` holding another and forwarding calls to it (e.g. `FermaClimateFunction.Identity` wraps a vanilla function). The concern with wrapping on hot paths like `finalDensity` 
 (sampled millions of times per chunk) is not raw allocation cost — `SinglePointContext` is a trivial 3-int record — but that wrappers can bypass `NoiseChunk`'s caching and interpolation infrastructure. 
 During normal chunk generation, `NoiseChunk` provides a `FunctionContext` that tracks cell positions and caches intermediate results across the density function tree. If a wrapper calls `compute()` on its inner function 
 with a bare `SinglePointContext` instead, that inner function re-evaluates from scratch on every call, losing all caching benefits. We avoid wrapping anything we don't actively transform to keep the normal `NoiseChunk` evaluation path intact.
@@ -69,25 +69,25 @@ Key consequence: **`router` and `sampler` capture independent wired copies** of 
 
 ---
 
-## 2. Firma flow
+## 2. Ferma flow
 
 ### 2.1 Generator selection (Bukkit layer)
 
-- `plugin.yml` registers Firma as a world-gen plugin.
-- `Firma.getDefaultWorldGenerator(worldName, id)` returns a `FirmaChunkGenerator` (Bukkit-side wrapper, **not** an NMS generator).
+- `plugin.yml` registers Ferma as a world-gen plugin.
+- `Ferma.getDefaultWorldGenerator(worldName, id)` returns a `FermaChunkGenerator` (Bukkit-side wrapper, **not** an NMS generator).
   - `id` is parsed into `GenerationMode`:
     - `"vanilla"` / null -> `VANILLA`
     - `"void"` -> `VOID`
     - any registered pack id -> `PACK` (pack cached on the generator)
     - anything else -> warning + fail to parse.
-- Paper wraps `FirmaChunkGenerator` inside `org.bukkit.craftbukkit.generator.CustomChunkGenerator`, which itself wraps a real vanilla `NoiseBasedChunkGenerator` as its `delegate`.
+- Paper wraps `FermaChunkGenerator` inside `org.bukkit.craftbukkit.generator.CustomChunkGenerator`, which itself wraps a real vanilla `NoiseBasedChunkGenerator` as its `delegate`.
 
 ### 2.2 `WorldInitEvent` injection — `NMSInjectListener`
 
 Triggered once per world (de-duped via `injectedWorlds` set).
 Steps:
 
-1. Confirm the world's Bukkit generator is a `FirmaChunkGenerator`. If not, bail.
+1. Confirm the world's Bukkit generator is a `FermaChunkGenerator`. If not, bail.
 2. Pull `ServerLevel` from `CraftWorld`.
 3. `unwrapToVanilla(currentGenerator)` — reflects `CustomChunkGenerator.delegate` to get the real `NoiseBasedChunkGenerator`.
 4. **Branch on mode**:
@@ -98,14 +98,16 @@ Steps:
 #### `PACK` mode (the interesting case)
 - Read `randomState = serverWorld.getChunkSource().randomState()`.
 - Take the **wired** router via `randomState.router()` (NOT `settings.noiseRouter()` — that one is un-wired and would yield broken aquifer/fluid noise -> "world full of water" bug).
-- Build a new `NoiseRouter` via `FirmaNoiseRouter.patchClimateFunctions(wiredRouter, randomState, seed, pack)`:
-  - For each of the 5 configurable climate parameters (`temperature`, `humidity` (vanilla `vegetation`), `continentalness` (`continents`), `erosion`, `weirdness` (`ridges`)):
-    - If `pack.hasClimateConfig(param)` -> `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / Shattered / etc.).
+- Run the backstop assertion (`GraphSurgeryDiagnostic.assertCoupledBaseline`) against the wired router; the primary gate already ran in `Ferma.getDefaultWorldGenerator` before the world existed (see §2.4).
+- Build a new `NoiseRouter` via `FermaNoiseRouter.patchClimateFunctions(wiredRouter, seed, pack)`:
+  - For each of the 6 configurable climate parameters (`temperature`, `humidity` (vanilla `vegetation`), `continentalness` (`continents`), `erosion`, `weirdness` (`ridges`), and `depth` on decoupled settings only):
+    - If `pack.hasClimateConfig(param)` -> `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / YGradient / Shattered / etc.).
     - Otherwise -> pass through the **wired vanilla function** unchanged (no wrapper, no `Identity` — avoids per-call `SinglePointContext` allocation).
-  - **Terrain-shape fields are rebuilt** from patched climate functions (see §2.4):
-    - `depth` = `yClampedGradient(-64, 320, 1.5, -1.5) + rebuiltOffset` (derived, not pack-configurable)
-    - `initialDensityWithoutJaggedness` = `slideOverworld(amplified, add(noiseGradientDensity(cache2d(rebuiltFactor), rebuiltDepth), constant(-0.703125)).clamp(-64, 64))`
-    - `finalDensity` = `postProcess(slideOverworld(amplified, rebuiltSlopedCheese))` where `slopedCheese = noiseGradientDensity(rebuiltFactor, rebuiltDepth + rebuiltJaggedness * jaggedNoise) + BASE_3D_NOISE`
+  - **Terrain-shape fields are surgically rewritten** from the wired graph (see §2.4):
+    `depth`, `initialDensityWithoutJaggedness`, and `finalDensity` are `mapAll` copies of
+    the wired vanilla graphs with the configured parameters' canonical climate nodes
+    replaced by the pack functions. `depth` remains derived (never pack-configurable on
+    coupled settings — composite-noise policy).
   - Independent fields (`barrierNoise`, `fluidLevelFloodednessNoise`, `fluidLevelSpreadNoise`, `lavaNoise`, `veinToggle`, `veinRidged`, `veinGap`) are passed through wired vanilla unchanged.
 - **Hack**: reflectively set `RandomState.router` (a `final` field) to the patched router.
   - We deliberately do **not** touch `NoiseBasedChunkGenerator.settings`: replacing it with a `Holder.direct(...)` would round-trip through the codec on save and our custom `DensityFunction`s encode as `{}`, corrupting `level.dat` (`"No key dimensions in MapLike[{}]"` on reload).
@@ -133,124 +135,89 @@ Wraps a vanilla `ChunkGenerator`. Each override checks `voidMode`:
 | `getBaseHeight`, `getBaseColumn`, `getSeaLevel`, `getMinY`, `getGenDepth`, `addDebugScreenInfo` | always delegate | always delegate |
 | `codec()` | `MapCodec.assumeMapUnsafe(ChunkGenerator.CODEC)` — never actually serialized; we don't replace the generator in `settings`/`level.dat` |
 
-`FirmaChunkGenerator.generateNoise` (Bukkit-side) is only reached for `VOID` — and there it just returns. For other modes the Paper plumbing eventually calls our NMS delegate, which calls vanilla.
+`FermaChunkGenerator.generateNoise` (Bukkit-side) is only reached for `VOID` — and there it just returns. For other modes the Paper plumbing eventually calls our NMS delegate, which calls vanilla.
 
 ---
 
-## 2.4 TODO: rebuild terrain-shape fields from Firma-modified climate functions
+## 2.4 Terrain-shape patching — graph surgery
 
-Terrain-shape dependency chain:
+Terrain must respond to pack-configured continentalness/erosion/weirdness: the wired
+`depth`, `initialDensityWithoutJaggedness`, and `finalDensity` embed the vanilla climate
+functions deep inside spline coordinates and the cave pipeline.
 
-```text
-patched continentalness
-  ├─ overworld/offset
-  │    └─ overworld/depth
-  │         ├─ initial_density_without_jaggedness
-  │         └─ overworld/sloped_cheese
-  │              └─ final_density
-  ├─ overworld/factor
-  │    ├─ initial_density_without_jaggedness
-  │    └─ overworld/sloped_cheese
-  │         └─ final_density
-  └─ overworld/jaggedness
-       └─ overworld/sloped_cheese
-            └─ final_density
+Ferma patches them by in-place graph surgery (`FermaNoiseRouter.patchClimateFunctions`),
+not by rebuilding. This relies on a wiring property of `RandomState`: the whole router is
+wired through ONE `NoiseWiringHelper` whose cache dedupes structurally-equal nodes
+(records all the way down), so the inner climate node of each router field
+(`HolderHolder -> Marker -> ShiftedNoise`) is the SAME canonical object embedded in every
+terrain spline coordinate. The surgery:
 
-patched erosion and patched ridges/weirdness also feed offset/factor/jaggedness.
-```
+1. Unwraps each configured coupled parameter's router field to its canonical inner node
+   (`FermaNoiseRouter.unwrapCanonical`).
+2. Rewrites the three terrain fields with `mapAll`, replacing every node structurally
+   equal (`equals`) to a canonical node with the pack's climate function. `mapAll`
+   rebuilds copies bottom-up, so matching is by `equals`, never identity. Marker wrappers
+   (flat_cache/cache_2d/interpolated) are preserved — replacement happens at the
+   inner-node level — so `NoiseChunk` caching and chunk-generation speed are unaffected.
+3. All other router fields (aquifer noises, veins) pass through wired vanilla unchanged.
 
-Vanilla `overworld.json` exposes climate functions in `noise_router`, but terrain shape is not computed by dynamically asking the top-level router fields at runtime. During `RandomState` construction, Mojang wires the full density graph into callable functions. If Firma replaces only `router.continents()`, `router.erosion()`, and `router.ridges()`, the already-wired terrain graph inside `depth`, `initialDensityWithoutJaggedness`, and `finalDensity` can still reference vanilla climate functions.
+**Composite-noise policy.** Ferma never replaces a noise derived from other climate
+functions. On coupled settings `depth` is `add(y_clamped_gradient, <variant>/offset)`,
+where `offset` is the spline over continentalness/erosion/ridges_folded — the only
+composite sampler axis in any vanilla settings. A pack configuring `depth` there is
+refused by `patchClimateFunctions` (checked at the point of danger, so the function cannot
+be called incorrectly). On decoupled settings `depth` is a plain constant, so it is freely
+configurable and replaced like any other router field.
 
-Relevant vanilla source path from `NoiseRouterData.registerTerrainNoises(...)`:
+Everything the datapack-effective settings define — terrain splines, caves, amplified and
+large-biomes variants — is inherited from the wired graph verbatim.
 
-```java
-Coordinate continents = new DensityFunctions.Spline.Coordinate(continentalness);
-Coordinate erosion = new DensityFunctions.Spline.Coordinate(erosion);
-Coordinate ridges = new DensityFunctions.Spline.Coordinate(RIDGES);
-Coordinate ridgesFolded = new DensityFunctions.Spline.Coordinate(RIDGES_FOLDED);
+### The assertion gate (`GraphSurgeryDiagnostic`)
 
-offset = spline(TerrainProvider.overworldOffset(continents, erosion, ridgesFolded, amplified));
-factor = spline(TerrainProvider.overworldFactor(continents, erosion, ridges, ridgesFolded, amplified));
-depth = yClampedGradient(-64, 320, 1.5, -1.5) + offset;
-jaggedness = spline(TerrainProvider.overworldJaggedness(continents, erosion, ridges, ridgesFolded, amplified));
-slopedCheese = noiseGradientDensity(factor, depth + jaggedness * jaggedNoise);
-finalDensity = ... slopedCheese ... caves ... aquifers ...;
-```
+The dedup property is asserted, never assumed:
 
-Current Firma state (terrain rebuild implementation):
+- **Assertion A**: each canonical climate node is found (by `equals`) in the terrain graphs.
+- **Assertion B**: every occurrence is Marker-wrapped.
 
-- ✅ **Steps 1-3 complete**: `offset`, `factor`, `jaggedness`, and `depth` are rebuilt from patched climate functions using vanilla's spline logic.
-  - All three spline outputs wrapped in `splineWithBlending(splineValue, blendValue)` = `flatCache(cache2d(lerp(blendAlpha(), blendValue, splineValue)))` matching vanilla exactly.
-- ✅ **Step 4 complete**: `initialDensityWithoutJaggedness` is rebuilt as `slideOverworld(amplified, add(noiseGradientDensity(cache2d(factor), depth), constant(-0.703125)).clamp(-64, 64))`.
-- ✅ **Step 5 complete**: `finalDensity` fully rebuilt with noise cave integration (Option B).
-- ✅ **Step 6 complete**: Only transient `RandomState.router` and `RandomState.sampler` are patched; `NoiseBasedChunkGenerator.settings` remains untouched.
-- ✅ **Step 7 complete**: No `FirmaClimateFunction.Identity` wrappers in rebuilt terrain paths; direct `DensityFunction` composition.
-- `depth` is no longer pack-configurable; it's always derived as `yClampedGradient + rebuiltOffset`.
-- `PackLoader` validates climate parameter names and rejects unknown keys like `depth`.
+Two stages, per the fail-hard policy (Ferma is the noise authority; externally modified
+graphs are an incompatibility):
 
-### Noise cave integration (Option B — implemented)
-
-All noise cave functions rebuilt from `RandomState.noises` via reflection (Option B), matching `NoiseRouterData` exactly.
-Legacy cave carvers are a separate system disabled via datapack.
-
-**Reflection access encapsulated in `NoiseAccess` helper class:**
-- `NoiseAccess.noises` — `HolderGetter<NormalNoise.NoiseParameters>` from private `RandomState.noises`
-- `NoiseAccess.terrainRandom` — `RandomSource` from `RandomState.random.fromHashOf("minecraft:terrain")`, matching vanilla's `NoiseWiringHelper.wrapNew()` exactly
-- `NoiseAccess.wireNoise(unwired)` — wires an un-wired `DensityFunction` by resolving all `NoiseHolder` references to instantiated `NormalNoise` instances via `randomState.getOrCreateNoise()`. Mirrors vanilla's `NoiseWiringHelper.visitNoise()`.
-
-**Rebuilt cave functions:**
-
-| Method | Vanilla equivalent | Noises used |
-|---|---|---|
-| `rebuildSpaghettiRoughness(na)` | `NoiseRouterData.spaghettiRoughnessFunction()` | `SPAGHETTI_ROUGHNESS`, `SPAGHETTI_ROUGHNESS_MODULATOR` |
-| `rebuildEntrances(na, spaghettiRoughness)` | `NoiseRouterData.entrances()` | `SPAGHETTI_3D_RARITY`, `SPAGHETTI_3D_THICKNESS`, `SPAGHETTI_3D_1`, `SPAGHETTI_3D_2`, `CAVE_ENTRANCE` |
-| `rebuildSpaghetti2D(na)` | `NoiseRouterData.spaghetti2D()` | `SPAGHETTI_2D_MODULATOR`, `SPAGHETTI_2D`, `SPAGHETTI_2D_ELEVATION`, `SPAGHETTI_2D_THICKNESS` |
-| `rebuildPillars(na)` | `NoiseRouterData.pillars()` | `PILLAR`, `PILLAR_RARENESS`, `PILLAR_THICKNESS` |
-| `rebuildNoodle(na)` | `NoiseRouterData.noodle()` | `NOODLE`, `NOODLE_THICKNESS`, `NOODLE_RIDGE_A`, `NOODLE_RIDGE_B` |
-| `rebuildUnderground(slopedCheese, ...)` | `NoiseRouterData.underground()` | `CAVE_LAYER`, `CAVE_CHEESE` (+ composed cave functions above) |
-
-**Full `finalDensity` pipeline:**
-```
-slopedCheese = noiseGradientDensity(factor, depth + jaggedness * jaggedNoise) + BASE_3D_NOISE
-withEntrances = min(slopedCheese, mul(5.0, entrances))
-withCaves = rangeChoice(slopedCheese, -1000000, 1.5625, withEntrances, underground)
-slided = slideOverworld(amplified, withCaves)
-postProcessed = postProcess(slided)      // blendDensity -> interpolated -> mul(0.64) -> squeeze
-finalDensity = min(postProcessed, noodle)
-```
-
-**Remaining considerations:**
-- **Aquifer consistency**: Vanilla `Aquifer` reads `noiseRouter.erosion()` and `noiseRouter.depth()` directly. Our rebuilt `depth` is in the router, so aquifers see consistent values.
-- **Legacy carvers**: Disabled via datapack (separate from noise caves).
-- **Slide function**: Uses `DensityFunctions.lerp()` matching vanilla exactly (earlier manual decomposition caused MAX non-overlapping warnings).
+- **Primary gate** — `GraphSurgeryDiagnostic.validateVanillaStructure`, called from
+  `Ferma.getDefaultWorldGenerator` for pack worlds. Graph structure is seed-independent
+  and datapacks are server-global, so the coupled vanilla settings (overworld, amplified,
+  large_biomes) are validated once against throwaway `RandomState.create(...)` instances.
+  On failure it throws; the exception propagates out of `WorldCreator.createWorld()` and
+  Bukkit/Multiverse report a clean creation failure. No world is created.
+- **Backstop** — the same assertions against the world's real wired router at
+  `WorldInitEvent`, which Aincrad fires on the main thread from both
+  `MinecraftServer.loadWorld0` (bukkit.yml worlds) and `CraftServer.createWorld`. On
+  failure: two SEVERE lines, no patch, and the world falls back to vanilla. Vanilla
+  behavior (game rules, players, seeds, vanilla presets) can never trip either stage.
 
 ### Pass-through audit
 
-`FirmaNoiseRouter.patchClimateFunctions(...)` currently passes these vanilla router fields through unchanged:
+`FermaNoiseRouter.patchClimateFunctions(...)` passes these vanilla router fields through unchanged:
 
 | Pass-through field | Vanilla role | Depends on patched climate inputs? | Status |
 |---|---|---:|---|
-| `barrierNoise` | Aquifer barrier noise from `Noises.AQUIFER_BARRIER` | No | ✅ Pass-through safe; independent aquifer noise. |
-| `fluidLevelFloodednessNoise` | Aquifer fluid-level floodedness from `Noises.AQUIFER_FLUID_LEVEL_FLOODEDNESS` | No | ✅ Pass-through safe; independent aquifer noise. |
-| `fluidLevelSpreadNoise` | Aquifer fluid-level spread from `Noises.AQUIFER_FLUID_LEVEL_SPREAD` | No | ✅ Pass-through safe; independent aquifer noise. |
-| `lavaNoise` | Aquifer lava selector from `Noises.AQUIFER_LAVA` | No | ✅ Pass-through safe; independent aquifer noise. |
-| `veinToggle` | Ore vein vertical/noise selector using `Noises.ORE_VEININESS` | No | ✅ Pass-through safe; independent ore-vein path. |
-| `veinRidged` | Ore vein ridge strength using `Noises.ORE_VEIN_A/B` and Y range | No | ✅ Pass-through safe; independent ore-vein path. |
-| `veinGap` | Ore vein gap noise using `Noises.ORE_GAP` | No | ✅ Pass-through safe; independent ore-vein path. |
+| `barrierNoise` | Aquifer barrier noise from `Noises.AQUIFER_BARRIER` | No | Pass-through safe; independent aquifer noise. |
+| `fluidLevelFloodednessNoise` | Aquifer fluid-level floodedness from `Noises.AQUIFER_FLUID_LEVEL_FLOODEDNESS` | No | Pass-through safe; independent aquifer noise. |
+| `fluidLevelSpreadNoise` | Aquifer fluid-level spread from `Noises.AQUIFER_FLUID_LEVEL_SPREAD` | No | Pass-through safe; independent aquifer noise. |
+| `lavaNoise` | Aquifer lava selector from `Noises.AQUIFER_LAVA` | No | Pass-through safe; independent aquifer noise. |
+| `veinToggle` | Ore vein vertical/noise selector using `Noises.ORE_VEININESS` | No | Pass-through safe; independent ore-vein path. |
+| `veinRidged` | Ore vein ridge strength using `Noises.ORE_VEIN_A/B` and Y range | No | Pass-through safe; independent ore-vein path. |
+| `veinGap` | Ore vein gap noise using `Noises.ORE_GAP` | No | Pass-through safe; independent ore-vein path. |
 
-**Rebuilt fields (no longer pass-through):**
-
-| Rebuilt field | Implementation | Status |
-|---|---|---|
-| `depth` | `yClampedGradient(-64, 320, 1.5, -1.5) + rebuiltOffset` | ✅ Rebuilt from patched climate; derived, not configurable. |
-| `initialDensityWithoutJaggedness` | `slideOverworld(amplified, add(noiseGradientDensity(cache2d(rebuiltFactor), rebuiltDepth), constant(-0.703125)).clamp(-64, 64))` | ✅ Rebuilt from patched terrain inputs. |
-| `finalDensity` | Full pipeline: `slopedCheese` -> entrance caves -> `rangeChoice` -> `underground` -> `slideOverworld` -> `postProcess` -> noodle caves (see §2.4 noise cave integration) | ✅ Complete with noise cave integration. |
+The terrain fields (`depth`, `initialDensityWithoutJaggedness`, `finalDensity`) are the
+surgically rewritten copies of the wired graph when any coupled parameter is configured,
+and the wired originals otherwise. Aquifers read `router.depth()`/`router.erosion()`, so
+they see the same patched values as terrain — consistent by construction.
 
 ---
 
 ## 2.5 Climate noise sampling semantics
 
-The `perlin` / `octave_perlin` / `double_perlin` pack types are backed by Firma's own port of
+The `perlin` / `octave_perlin` / `double_perlin` pack types are backed by Ferma's own port of
 vanilla's noise stack (`PerlinNoiseSampler` -> `OctavePerlinNoiseSampler` -> `DoublePerlinNoiseSampler`
 -> `DoublePerlinClimateFunction`), seeded via `PositionalRandomFactory` rather than vanilla's
 `NoiseWiringHelper` (see §4). The octave math mirrors vanilla `PerlinNoise`/`NormalNoise`:
@@ -279,11 +246,11 @@ decorrelation signature is guarded by `shattered_isPerBlockDecorrelated`.
 
 ---
 
-## 3. Summary of Firma's overrides
+## 3. Summary of Ferma's overrides
 
 | Layer | What we touch | How | Why |
 |---|---|---|---|
-| Bukkit generator | `FirmaChunkGenerator` | `getDefaultWorldGenerator` | Marker + mode/pack carrier; Paper wraps it as `CustomChunkGenerator`. |
+| Bukkit generator | `FermaChunkGenerator` | `getDefaultWorldGenerator` | Marker + mode/pack carrier; Paper wraps it as `CustomChunkGenerator`. |
 | NMS chunk generator | `ChunkMap.worldGenContext.generator` | Reflection (`Reflection.CHUNKMAP`) | Insert `NMSChunkGeneratorDelegate` so we can skip stages in `VOID` mode. |
 | NMS noise (PACK mode) | `RandomState.router` | Reflection (`final` field set) | Replace climate density functions with pack-defined ones; safe because router is rebuilt at startup. |
 | NMS climate sampler | `RandomState.sampler` | Reflection (`final` field set) | `Climate.Sampler` is captured independently in `RandomState`'s constructor; must be rebuilt from the patched router for `MultiNoiseBiomeSource` to honor pack climate. |
@@ -295,8 +262,8 @@ The corruption hazard: if any of our custom `DensityFunction`s ever ends up insi
 
 We close this hazard with three layers:
 
-1. **No mutation of saved fields.** `NoiseBasedChunkGenerator.settings` is never touched. All Firma noise patches go into `RandomState` (transient — rebuilt every server start from the unchanged `settings`). This is the primary defense.
-2. **Fail-loud codecs.** Every Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `RadialGradientClimateFunction`, `ShatteredClimateFunction`, `PeaksAndValleysFunction`) declares its `codec()` via `UnserializableMapCodec.of(name, recoveryDefault)`. That codec returns `DataResult.error(...)` on **encode**, so any future regression that re-introduces a serialization path errors out at the first attempted write. The error propagates through Mojang's `RecordBuilder` and `resultOrPartial(...)` cannot salvage it into `{}` — the save aborts loudly with a stack trace naming the offending Firma class. `level.dat` is left untouched.
+1. **No mutation of saved fields.** `NoiseBasedChunkGenerator.settings` is never touched. All Ferma noise patches go into `RandomState` (transient — rebuilt every server start from the unchanged `settings`). This is the primary defense.
+2. **Fail-loud codecs.** Every Ferma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `RadialGradientClimateFunction`, `ShatteredClimateFunction`) declares its `codec()` via `UnserializableMapCodec.of(name, recoveryDefault)`. That codec returns `DataResult.error(...)` on **encode**, so any future regression that re-introduces a serialization path errors out at the first attempted write. The error propagates through Mojang's `RecordBuilder` and `resultOrPartial(...)` cannot salvage it into `{}` — the save aborts loudly with a stack trace naming the offending Ferma class. `level.dat` is left untouched.
 3. **Permissive decode.** The same codec returns a safe sentinel (e.g. `Constant(0.0)`) on decode. This is purely a recovery affordance: if a `level.dat` from a buggy past version somehow contains our nodes, the world still loads. Decode is never expected to fire in normal operation since these classes are never registered in `BuiltInRegistries.DENSITY_FUNCTION_TYPE`.
 
 Together, layers (1) + (2) make silent corruption unreachable: either we never serialize (layer 1), or we error out before producing partial output (layer 2). Layer (3) is the parachute.
@@ -306,7 +273,7 @@ Together, layers (1) + (2) make silent corruption unreachable: either we never s
 `./gradlew test` runs three guards that fail the build if any layer above is broken:
 
 - `UnserializableMapCodecTest` (pure DFU): asserts `UnserializableMapCodec.of(...)` errors on encode and recovers on decode.
-- `FirmaDensityFunctionCodecGuardTest` (real NMS classes, no mocking): instantiates each Firma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `RadialGradientClimateFunction`, `ShatteredClimateFunction`, `PeaksAndValleysFunction`) and asserts `df.codec().codec().codec().encodeStart(JsonOps.INSTANCE, df).isError()`. If anyone replaces the failing codec with `MapCodec.unit(...)`, this test breaks.
+- `FermaDensityFunctionCodecGuardTest` (real NMS classes, no mocking): instantiates each Ferma `DensityFunction` (`Constant`, `Identity`, `WeirdnessToRidges`, `DoublePerlinClimateFunction`, `RadialGradientClimateFunction`, `ShatteredClimateFunction`) and asserts `df.codec().codec().codec().encodeStart(JsonOps.INSTANCE, df).isError()`. If anyone replaces the failing codec with `MapCodec.unit(...)`, this test breaks.
 - `NMSInjectListenerSafetyTest` (source-level static analysis): scans `NMSInjectListener.java` for the historical corruption patterns:
   - reflective access to `NoiseBasedChunkGenerator.class.getDeclaredField("settings")`
   - `Holder.direct(...)` paired with `NoiseGeneratorSettings`
@@ -328,13 +295,13 @@ A single `long` seed is the root of every deterministic noise decision. Its path
 3. **Biome placement**: `MultiNoiseBiomeSource` calls `RandomState.sampler` — deterministic in the seed because the underlying samplers are.
 4. **Structure / feature placement**: separate `WorldgenRandom` instances are reseeded per-chunk from `(seed, chunkX, chunkZ, salt)` inside `ChunkGenerator` methods; not part of the climate path but seed-derived all the same.
 
-### Firma's seed handling
+### Ferma's seed handling
 
 - **`VANILLA` / `VOID` mode**: we do nothing with the seed; vanilla owns it end-to-end.
 - **`PACK` mode**:
   - When we reflect-set `RandomState.router`, the **pass-through vanilla functions inherit the original wired samplers**, so their seed lineage is untouched.
-  - For pack-configured climate parameters, `NMSInjectListener` reads `serverWorld.getSeed()` and hands it to `FirmaNoiseRouter.patchClimateFunctions(wiredRouter, seed, pack)`.
-  - `FirmaNoiseRouter` constructs a `ClimateFunctionFactory(seed, pack.id())`. For each pack-configured parameter, `factory.build(...)` derives a per-parameter sub-seed:
+  - For pack-configured climate parameters, `NMSInjectListener` reads `serverWorld.getSeed()` and hands it to `FermaNoiseRouter.patchClimateFunctions(wiredRouter, seed, pack)`.
+  - `FermaNoiseRouter` constructs a `ClimateFunctionFactory(seed, pack.id())`. For each pack-configured parameter, `factory.build(...)` derives a per-parameter sub-seed:
     ```java
     new PositionalRandomFactory(worldSeed ^ (packId + ":" + parameter).hashCode())
     ```
@@ -348,8 +315,8 @@ A single `long` seed is the root of every deterministic noise decision. Its path
 ## 5. Special cases
 
 - **VOID worlds**: noise pipeline untouched at the `RandomState` level — we just short-circuit chunk-gen stages in the delegate. Vanilla `RandomState` is still built (cheap, side-effect-free) so debug commands etc. don't NPE.
-- **Unknown pack id**: `Firma.getDefaultWorldGenerator` throws `IllegalArgumentException` with a list of valid ids. World creation is aborted — we never silently fall back to vanilla, because a typo would otherwise produce the wrong world. `FirmaChunkGenerator.parseMode` has the same guard as a backstop.
-- **`FirmaChunkGenerator.generateNoise` warning**: if Paper ever calls this path for `VANILLA`/`PACK`, it means NMS injection didn't run — logged but non-fatal.
+- **Unknown pack id**: `Ferma.getDefaultWorldGenerator` throws `IllegalArgumentException` with a list of valid ids. World creation is aborted — we never silently fall back to vanilla, because a typo would otherwise produce the wrong world. `FermaChunkGenerator.parseMode` has the same guard as a backstop.
+- **`FermaChunkGenerator.generateNoise` warning**: if Paper ever calls this path for `VANILLA`/`PACK`, it means NMS injection didn't run — logged but non-fatal.
 - **Concurrent world init**: `injectedWorlds` is a `ConcurrentHashMap.newKeySet()`; first call wins, repeats are no-ops.
 
 ---

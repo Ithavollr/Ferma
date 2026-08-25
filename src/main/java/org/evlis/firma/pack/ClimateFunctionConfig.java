@@ -92,6 +92,21 @@ public sealed interface ClimateFunctionConfig {
      * via the same five parameters. See {@code RadialGradientClimateFunction}
      * for detailed usage examples (high_mountain, frozen core, etc.).
      */
+    /**
+     * Vertical gradient — {@code fromValue} at {@code fromY} rising or falling linearly to
+     * {@code toValue} at {@code toY}, clamped outside the band. The altitude-banding
+     * counterpart to {@link RadialGradient}; typically used for {@code depth}.
+     */
+    record YGradient(
+        int fromY,
+        int toY,
+        double fromValue,
+        double toValue
+    ) implements ClimateFunctionConfig {
+        @Override
+        public String type() { return "y_gradient"; }
+    }
+
     record RadialGradient(
         double centerX,
         double centerZ,

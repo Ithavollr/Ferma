@@ -8,8 +8,8 @@ import java.util.Objects;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * A parsed Firma pack containing climate function configurations.
- * Packs are loaded from plugins/Firma/packs/<pack_id>/pack.yml
+ * A parsed Ferma pack containing climate function configurations.
+ * Packs are loaded from plugins/Ferma/packs/<pack_id>/pack.yml
  */
 public record FermaPack(
     int schemaVersion,

@@ -42,7 +42,7 @@ class NMSInjectListenerSafetyTest {
     /**
      * Forbidden: wrapping a {@code NoiseGeneratorSettings} in {@code Holder.direct(...)}.
      * That forces inline serialization of the entire settings record, including any
-     * Firma DensityFunctions, which silently encodes to {@code {}} and corrupts
+     * Ferma DensityFunctions, which silently encodes to {@code {}} and corrupts
      * {@code level.dat}.
      */
     @Test

@@ -10,14 +10,18 @@ A Minecraft Paper 1.21.4 world generation plugin that provides a minimal injecti
 
 Ferma was inspired from the Terra project, but takes a different approach. Instead of rebuilding world generation from scratch, it hijacts specifically the noise components, allowing customizable world generation by modifying noise parameters (for example, clamping temperature to 1.0 in order to create a desert world of only hot biomes. Or also clamp continentalness to 0.1 and you'll get Arakis, with no oceans either).  
 
-One of the major advantages of this approach is that it allows only as much modification from vanilla as you want, AND it is compatible with most world-generation datapacks.  
+One of the major advantages of this approach is that it allows only as much modification from vanilla as you want.
+
+> [!IMPORTANT]
+> Ferma is the sole authority for noise on any world registered to it. Datapacks that alter the noise graph (terrain, density functions, noise settings) are an incompatibility: Ferma refuses that world with a SEVERE log and it generates as plain vanilla instead. Datapacks that only add biomes, features, structures or surface rules work normally.
 
 ### Current features:
 
 - Void world generation
 - Vanilla world generation
-- Custom world generation with tunable climate parameters including:
-  - `[temperature, humidity, continentalness, erosion, weirdness]`
+- Custom world generation with tunable climate parameters:
+  - `[temperature, humidity, continentalness, erosion, weirdness]`, plus `depth` on nether/caves/floating-islands worlds
+- Noise types: `constant`, `identity`, `perlin`, `octave_perlin`, `double_perlin`, `radial_gradient`, `y_gradient`, `shattered`
 
 ## Usage
 

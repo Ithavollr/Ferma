@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * Bukkit ChunkGenerator wrapper for Firma.
+ * Bukkit ChunkGenerator wrapper for Ferma.
  * This class serves as a marker to identify worlds using our NMS injection
  * and carries the generation mode configuration per-world.
  *
@@ -25,7 +25,7 @@ import java.util.Random;
 public class FermaChunkGenerator extends ChunkGenerator {
 
     /**
-     * Generation modes for Firma worlds.
+     * Generation modes for Ferma worlds.
      */
     public enum GenerationMode {
         /** Faithful vanilla pass-through (Stage 1) */
@@ -43,7 +43,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
     private final VoidPalette voidPalette;
 
     /**
-     * Creates a Firma chunk generator with the specified mode.
+     * Creates a Ferma chunk generator with the specified mode.
      *
      * @param plugin The plugin instance
      * @param modeId The generation mode string ("vanilla", "void", or pack id), or null for default
@@ -53,7 +53,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
         this.packId = modeId;
         this.mode = parseMode(modeId);
         this.voidPalette = loadVoidPalette(modeId);
-        plugin.getLogger().info("Created Firma generator with mode: " + mode + (mode == GenerationMode.NOISE ? " (pack: " + modeId + ")" : ""));
+        plugin.getLogger().info("Created Ferma generator with mode: " + mode + (mode == GenerationMode.NOISE ? " (pack: " + modeId + ")" : ""));
     }
 
     /**
@@ -193,6 +193,15 @@ public class FermaChunkGenerator extends ChunkGenerator {
     @Override
     public @NotNull List<BlockPopulator> getDefaultPopulators(@NotNull World world) {
         return List.of(); // Vanilla handles all populators
+    }
+
+    /**
+     * Let vanilla handle noise (except in VOID mode).
+     * Only read when Ferma has not injected; true keeps such worlds vanilla instead of empty.
+     */
+    @Override
+    public boolean shouldGenerateNoise() {
+        return mode != GenerationMode.VOID; // Disable in void mode
     }
 
     /**

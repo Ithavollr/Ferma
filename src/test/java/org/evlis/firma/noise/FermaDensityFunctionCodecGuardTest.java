@@ -14,12 +14,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * For every Firma {@link DensityFunction} we ever inject into {@code RandomState},
+ * For every Ferma {@link DensityFunction} we ever inject into {@code RandomState},
  * this test instantiates a real instance and asserts its declared {@code codec()}
  * errors on encode. If anyone replaces {@code UnserializableMapCodec.of(...)} with
  * {@code MapCodec.unit(...)} (the historical corruption vector), this test fails.
  *
- * <p>No mocking - every class under test is a real Firma class operating on real
+ * <p>No mocking - every class under test is a real Ferma class operating on real
  * Mojang DataFixerUpper APIs.
  */
 class FermaDensityFunctionCodecGuardTest {
@@ -80,6 +80,11 @@ class FermaDensityFunctionCodecGuardTest {
             1.0
         );
         assertCodecErrorsOnEncode(df);
+    }
+
+    @Test
+    void yGradientClimate_codecErrorsOnEncode() {
+        assertCodecErrorsOnEncode(new YGradientClimateFunction(-64, 320, 1.5, -1.5));
     }
 
     @Test

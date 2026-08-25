@@ -13,7 +13,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for Firma's custom climate density functions.
+ * Tests for Ferma's custom climate density functions.
  *
  * <p>These tests verify mathematical correctness independent of any pack configuration:
  * <ul>
@@ -450,6 +450,45 @@ class FermaClimateFunctionTest {
             assertEquals(perlin.compute(provider.forIndex(i)), filled[i], 0.0,
                 "fillArray diverged from compute() at index " + i);
         }
+    }
+
+    @Test
+    void yGradient_interpolatesAcrossBandAndClampsOutside() {
+        // Vanilla depth-style ramp: 1.5 at the bottom falling to -1.5 at the top.
+        YGradientClimateFunction gradient = new YGradientClimateFunction(-64, 320, 1.5, -1.5);
+
+        assertEquals(1.5, gradient.compute(0, -64, 0), 1e-9, "value at from_y");
+        assertEquals(-1.5, gradient.compute(0, 320, 0), 1e-9, "value at to_y");
+        assertEquals(0.0, gradient.compute(0, 128, 0), 1e-9, "midpoint interpolates linearly");
+
+        // Outside the band the value is clamped, not extrapolated.
+        assertEquals(1.5, gradient.compute(0, -200, 0), 1e-9, "below from_y clamps");
+        assertEquals(-1.5, gradient.compute(0, 1000, 0), 1e-9, "above to_y clamps");
+
+        // Monotone across the band, and independent of X/Z.
+        double lower = gradient.compute(0, 0, 0);
+        double upper = gradient.compute(0, 200, 0);
+        assertTrue(lower > upper, "descending gradient must decrease with height");
+        assertEquals(lower, gradient.compute(9999, 0, -9999), 0.0, "must not vary with X/Z");
+    }
+
+    @Test
+    void yGradient_invertedBand_stillInterpolates() {
+        // Ascending gradient (from_value < to_value) must work symmetrically.
+        YGradientClimateFunction gradient = new YGradientClimateFunction(0, 100, -1.0, 1.0);
+
+        assertEquals(-1.0, gradient.compute(0, 0, 0), 1e-9);
+        assertEquals(0.0, gradient.compute(0, 50, 0), 1e-9);
+        assertEquals(1.0, gradient.compute(0, 100, 0), 1e-9);
+        assertEquals(-1.0, gradient.minValue(), 0.0);
+        assertEquals(1.0, gradient.maxValue(), 0.0);
+    }
+
+    @Test
+    void yGradient_emptyBand_isRejected() {
+        // from_y == to_y would divide by zero and emit NaN climate values.
+        assertThrows(IllegalArgumentException.class,
+            () -> new YGradientClimateFunction(64, 64, 1.0, -1.0));
     }
 
     @Test

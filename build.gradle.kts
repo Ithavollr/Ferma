@@ -36,6 +36,31 @@ java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
+// Single source of truth for which default packs ship: the resources directory itself.
+// PackLoader reads this index to extract them, so adding or removing a pack directory
+// needs no code change and cannot silently drop a shipped pack.
+val packsDir = layout.projectDirectory.dir("src/main/resources/packs")
+val generatePackIndex by tasks.registering {
+    val outputFile = layout.buildDirectory.file("generated/packs/packs/index.txt")
+    inputs.dir(packsDir).withPropertyName("packs")
+    outputs.file(outputFile).withPropertyName("index")
+    doLast {
+        val ids = packsDir.asFile.listFiles { f: File -> f.isDirectory && File(f, "pack.yml").isFile }
+            ?.map { it.name }
+            ?.sorted()
+            ?: emptyList()
+        if (ids.isEmpty()) {
+            throw GradleException("No packs found in $packsDir - every build must ship at least one default pack")
+        }
+        outputFile.get().asFile.apply { parentFile.mkdirs() }.writeText(ids.joinToString("\n", postfix = "\n"))
+        logger.lifecycle("Ferma pack index: ${ids.size} pack(s) - ${ids.joinToString(", ")}")
+    }
+}
+
+sourceSets.main {
+    resources.srcDir(layout.buildDirectory.dir("generated/packs"))
+}
+
 tasks {
     runServer {
         minecraftVersion("1.21.4")
@@ -43,6 +68,7 @@ tasks {
     }
 
     processResources {
+        dependsOn(generatePackIndex)
         val props = mapOf("version" to version)
         // expand() properties aren't tracked as inputs; without this a version bump leaves stale output
         inputs.property("version", version)

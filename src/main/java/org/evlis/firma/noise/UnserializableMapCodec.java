@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 /**
  * A {@link MapCodec} that <strong>refuses to encode</strong>.
  *
- * <p>Every Firma {@link net.minecraft.world.level.levelgen.DensityFunction} we inject into
+ * <p>Every Ferma {@link net.minecraft.world.level.levelgen.DensityFunction} we inject into
  * {@code RandomState} uses this codec. The contract is: these objects must never appear in
  * a serialization path. They are reflected into transient {@code RandomState} fields only;
  * {@code NoiseBasedChunkGenerator.settings} must remain the original registry-keyed Holder.
@@ -24,7 +24,7 @@ import java.util.stream.Stream;
  * {@code "No key dimensions in MapLike[{}]"} error.
  *
  * <p>With this codec, encoding instead returns a {@link DataResult.Error} carrying a clear
- * message identifying the offending Firma class. The error propagates up through Mojang's
+ * message identifying the offending Ferma class. The error propagates up through Mojang's
  * record builders; the save aborts loudly with a stack trace pointing at the bug, and
  * {@code level.dat} is left intact.
  *
@@ -45,7 +45,7 @@ public final class UnserializableMapCodec {
      */
     public static <A> MapCodec<A> of(String identifier, A recoveryDefault) {
         final String errorMessage =
-            "Firma DensityFunction '" + identifier + "' is not serializable and must never " +
+            "Ferma DensityFunction '" + identifier + "' is not serializable and must never " +
             "appear in a codec encode path. This indicates a regression in NMSInjectListener: " +
             "RandomState patches must remain transient and never leak into " +
             "NoiseBasedChunkGenerator.settings or any other serialized field. " +

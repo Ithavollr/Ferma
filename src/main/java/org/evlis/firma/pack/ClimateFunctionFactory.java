@@ -6,9 +6,10 @@ import org.evlis.firma.noise.FermaClimateFunction;
 import org.evlis.firma.noise.PositionalRandomFactory;
 import org.evlis.firma.noise.RadialGradientClimateFunction;
 import org.evlis.firma.noise.ShatteredClimateFunction;
+import org.evlis.firma.noise.YGradientClimateFunction;
 
 /**
- * Factory for building FirmaClimateFunction instances from ClimateFunctionConfig.
+ * Factory for building FermaClimateFunction instances from ClimateFunctionConfig.
  * Each parameter gets its own seeded RNG for deterministic, independent results.
  */
 public class ClimateFunctionFactory {
@@ -43,6 +44,8 @@ public class ClimateFunctionFactory {
             case ClimateFunctionConfig.Shattered s -> buildShattered(s, factory);
             case ClimateFunctionConfig.ShiftedNoise s -> buildShiftedNoise(s, factory, vanilla);
             case ClimateFunctionConfig.WeirdnessToRidges w -> buildWeirdnessToRidges(w, factory, vanilla);
+            case ClimateFunctionConfig.YGradient g -> new YGradientClimateFunction(
+                g.fromY(), g.toY(), g.fromValue(), g.toValue());
             case ClimateFunctionConfig.RadialGradient g -> buildRadialGradient(g);
         };
     }
@@ -138,7 +141,7 @@ public class ClimateFunctionFactory {
         // Build the source function
         DensityFunction source = buildFromConfig(config.source(), factory, vanilla);
         
-        // Wrap with weirdness to ridges conversion - source must be a FirmaClimateFunction
+        // Wrap with weirdness to ridges conversion - source must be a FermaClimateFunction
         if (source instanceof FermaClimateFunction firmaSource) {
             return new FermaClimateFunction.WeirdnessToRidges(firmaSource);
         }

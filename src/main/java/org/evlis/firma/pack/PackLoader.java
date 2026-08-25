@@ -14,7 +14,7 @@ import java.util.Set;
 import java.util.logging.Logger;
 
 /**
- * Loads Firma packs from plugins/Firma/packs/[pack_id]/pack.yml
+ * Loads Ferma packs from plugins/Ferma/packs/[pack_id]/pack.yml
  */
 public class PackLoader {
     
@@ -30,7 +30,7 @@ public class PackLoader {
     
     /**
      * Load all packs from the packs directory.
-     * Returns a map of pack id to FirmaPack.
+     * Returns a map of pack id to FermaPack.
      */
     public Map<String, FermaPack> loadAll() {
         Map<String, FermaPack> packs = new HashMap<>();
@@ -144,7 +144,11 @@ public class PackLoader {
                 if (climateObj instanceof Map) {
                     Map<String, Object> climateMap = (Map<String, Object>) climateObj;
                     // Valid climate parameters (depth is not configurable - it's always derived)
-                    Set<String> validParams = Set.of("temperature", "humidity", "continentalness", "erosion", "weirdness");
+                    // depth is configurable only on decoupled settings (caves/floating_islands/
+                    // nether), where it is a constant; on the overworld family it is a composite
+                    // of the offset splines and is never replaced. That check needs the world's
+                    // settings and therefore happens at world init, not here.
+                    Set<String> validParams = Set.of("temperature", "humidity", "continentalness", "erosion", "weirdness", "depth");
 
                     for (Map.Entry<String, Object> entry : climateMap.entrySet()) {
                         String param = entry.getKey();
@@ -310,6 +314,17 @@ public class PackLoader {
                     new ClimateFunctionConfig.Identity();
                 yield new ClimateFunctionConfig.WeirdnessToRidges(source);
             }
+            case "y_gradient" -> {
+                int fromY = ((Number) config.getOrDefault("from_y", -64)).intValue();
+                int toY = ((Number) config.getOrDefault("to_y", 320)).intValue();
+                if (fromY == toY) {
+                    throw new IllegalArgumentException(
+                        "y_gradient requires from_y != to_y (both were " + fromY + ")");
+                }
+                double fromValue = ((Number) config.getOrDefault("from_value", 1.0)).doubleValue();
+                double toValue = ((Number) config.getOrDefault("to_value", -1.0)).doubleValue();
+                yield new ClimateFunctionConfig.YGradient(fromY, toY, fromValue, toValue);
+            }
             case "radial_gradient" -> {
                 // Bidirectional radial function: startValue + rate * distance, clamped.
                 // See RadialGradientClimateFunction for detailed examples (falloff, fall-up, plateau, bullseye).
@@ -362,10 +377,32 @@ public class PackLoader {
     
     /**
      * Extract default packs from jar resources to the packs directory.
+     *
+     * <p>The pack ids come from {@code /packs/index.txt}, generated at build time by the
+     * {@code generatePackIndex} Gradle task from the resources directory itself. The
+     * directory is the single source of truth: a pack added or removed there ships or
+     * stops shipping with no code change, and a shipped pack can never be silently
+     * omitted by a stale list.
      */
     private void extractDefaultPacks(File packsDir) {
-        String[] defaultPacks = {"passthrough", "frozen_world", "fully_frozen", "custom_noise", "high_mountain", "vanilla_noise"};
-        
+        List<String> defaultPacks;
+        try (java.io.InputStream is = getClass().getResourceAsStream("/packs/index.txt")) {
+            if (is == null) {
+                logger.severe("Pack index /packs/index.txt is missing from the jar - no default packs "
+                    + "extracted. This is a build problem: run the generatePackIndex Gradle task.");
+                return;
+            }
+            defaultPacks = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))
+                .lines()
+                .map(String::trim)
+                .filter(line -> !line.isEmpty())
+                .toList();
+        } catch (IOException e) {
+            logger.severe("Failed to read pack index /packs/index.txt: " + e.getMessage());
+            return;
+        }
+
         for (String packId : defaultPacks) {
             try {
                 extractPackFromResources(packId, packsDir);
@@ -374,19 +411,22 @@ public class PackLoader {
             }
         }
     }
-    
+
     /**
      * Extract a single pack from jar resources.
      */
     private void extractPackFromResources(String packId, File packsDir) throws IOException {
         String resourcePath = "/packs/" + packId + "/pack.yml";
         java.io.InputStream is = getClass().getResourceAsStream(resourcePath);
-        
+
         if (is == null) {
-            logger.warning("Pack resource not found: " + resourcePath);
+            // The index is generated from the resources directory, so this means the jar
+            // was assembled inconsistently rather than that a list went stale.
+            logger.severe("Pack '" + packId + "' is listed in the pack index but its pack.yml is "
+                + "missing from the jar: " + resourcePath);
             return;
         }
-        
+
         File packDir = new File(packsDir, packId);
         packDir.mkdirs();
         

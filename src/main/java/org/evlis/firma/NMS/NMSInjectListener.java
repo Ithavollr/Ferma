@@ -44,7 +44,7 @@ public class NMSInjectListener implements Listener {
 
         // Check if this world is using our generator
         if (!(world.getGenerator() instanceof FermaChunkGenerator firmaGenerator)) {
-            return; // Not a Firma world, skip
+            return; // Not a Ferma world, skip
         }
 
         // Prevent duplicate injection (thread-safe)
@@ -53,7 +53,7 @@ public class NMSInjectListener implements Listener {
         }
 
         try {
-            plugin.getLogger().info("Injecting Firma into world: " + world.getName());
+            plugin.getLogger().info("Injecting Ferma into world: " + world.getName());
 
             // Get the NMS ServerLevel from CraftWorld
             CraftWorld craftWorld = (CraftWorld) world;
@@ -80,7 +80,8 @@ public class NMSInjectListener implements Listener {
                 // Get the pack
                 FermaPack pack = firmaGenerator.getPack();
                 if (pack == null) {
-                    plugin.getLogger().warning("NOISE mode but no pack found for world: " + world.getName());
+                    plugin.getLogger().severe("Ferma will not govern world '" + world.getName() + "': NOISE mode but no pack was found.");
+                    plugin.getLogger().severe("This world falls back to vanilla generation; resolve the incompatibility before generating terrain you keep.");
                 } else {
                     // Patch the NoiseRouter in RandomState (transient, not serialized).
                     // Replacing NoiseBasedChunkGenerator.settings with a Direct holder would
@@ -92,18 +93,38 @@ public class NMSInjectListener implements Listener {
                         // (broken aquifer/fluid noise -> world flooded with water).
                         RandomState randomState = serverWorld.getChunkSource().randomState();
                         NoiseRouter wiredRouter = randomState.router();
-                        boolean amplified = noiseGenerator.stable(net.minecraft.world.level.levelgen.NoiseGeneratorSettings.AMPLIFIED);
-                        plugin.getLogger().info("Amplified terrain: " + amplified);
-                        
-                        // Patch the climate functions using the pack
+
+                        // Select the assertion baseline and surgery mode from the world's
+                        // settings identity (read-only; the settings field is never mutated).
+                        var settingsKey = noiseGenerator.settings.unwrapKey().orElse(null);
+                        GraphSurgeryDiagnostic.SettingsClass settingsClass = GraphSurgeryDiagnostic.classify(settingsKey);
+                        String context = "world '" + world.getName() + "' (settings "
+                            + (settingsKey == null ? "<keyless>" : settingsKey.location()) + ")";
+
+                        // Backstop assertion against the world's real wired router. The
+                        // primary gate already validated the registry graphs before this
+                        // world was created; a failure here follows the backstop path in
+                        // the catch below.
+                        switch (settingsClass) {
+                            case COUPLED -> GraphSurgeryDiagnostic.assertCoupledBaseline(
+                                wiredRouter, context, plugin.getLogger());
+                            case DECOUPLED -> GraphSurgeryDiagnostic.assertDecoupledBaseline(
+                                wiredRouter, context, plugin.getLogger());
+                            case END -> throw new IllegalStateException(
+                                "Ferma packs do not support minecraft:end noise settings yet (" + context + ").");
+                            case UNKNOWN -> throw new IllegalStateException(
+                                "Non-vanilla noise settings for " + context + ": Ferma is the noise authority"
+                                + " and cannot patch an externally defined graph.");
+                        }
+
+                        // Patch the climate functions using the pack (graph surgery).
+                        // Terrain is rewritten only on coupled settings; decoupled terrain
+                        // is climate-free and stays untouched.
                         NoiseRouter patchedRouter = FermaNoiseRouter.patchClimateFunctions(
-                            wiredRouter, randomState, serverWorld.getSeed(), pack, amplified
+                            wiredRouter, serverWorld.getSeed(), pack,
+                            settingsClass == GraphSurgeryDiagnostic.SettingsClass.COUPLED
                         );
-                        
-                        java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");
-                        routerField.setAccessible(true);
-                        routerField.set(randomState, patchedRouter);
-                        
+
                         // ALSO rebuild Climate.Sampler: it was constructed in RandomState's
                         // constructor from the *original* router and captured independently.
                         // MultiNoiseBiomeSource reads from sampler (not router) for biome lookup,
@@ -142,15 +163,22 @@ public class NMSInjectListener implements Listener {
                                 patchedRouter.ridges().mapAll(visitor),
                                 settings.spawnTarget()
                             );
+                        // Build and resolve everything before writing either field: a half-patched
+                        // RandomState would mean Ferma terrain with vanilla biomes.
+                        java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");
+                        routerField.setAccessible(true);
                         java.lang.reflect.Field samplerField = RandomState.class.getDeclaredField("sampler");
                         samplerField.setAccessible(true);
+                        routerField.set(randomState, patchedRouter);
                         samplerField.set(randomState, patchedSampler);
-                        
+
                         plugin.getLogger().info("Patched RandomState.router + sampler using pack: " + pack.id());
                     } catch (Exception e) {
-                        plugin.getLogger().warning("Failed to patch NoiseRouter via reflection: " + e.getMessage());
+                        // RandomState is left untouched; falls through to the delegate install
+                        // below, which wraps vanilla.
+                        plugin.getLogger().severe("Ferma will not govern world '" + world.getName() + "': " + e.getMessage());
+                        plugin.getLogger().severe("This world falls back to vanilla generation; resolve the incompatibility before generating terrain you keep.");
                         e.printStackTrace();
-                        // Continue with vanilla generation if patching fails
                     }
                 }
             }
@@ -189,10 +217,13 @@ public class NMSInjectListener implements Listener {
 
             Reflection.CHUNKMAP.setWorldGenContext(chunkMap, newContext);
 
-            plugin.getLogger().info("Successfully injected Firma into world: " + world.getName());
+            plugin.getLogger().info("Successfully injected Ferma into world: " + world.getName());
 
         } catch (Exception e) {
-            plugin.getLogger().severe("Failed to inject Firma into world: " + world.getName());
+            // Fails before a vanilla generator exists, so no delegate is installed; vanilla
+            // fallback comes from FermaChunkGenerator.shouldGenerateNoise() instead.
+            plugin.getLogger().severe("Ferma will not govern world '" + world.getName() + "': " + e.getMessage());
+            plugin.getLogger().severe("This world falls back to vanilla generation; resolve the incompatibility before generating terrain you keep.");
             e.printStackTrace();
         }
     }

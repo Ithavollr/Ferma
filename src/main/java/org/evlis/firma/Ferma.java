@@ -25,7 +25,7 @@ public final class Ferma extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        getLogger().info("Firma world generator initializing...");
+        getLogger().info("Ferma world generator initializing...");
         
         // Load packs
         packLoader = new PackLoader(this);
@@ -34,7 +34,7 @@ public final class Ferma extends JavaPlugin {
         
         // Register the NMS injection listener
         Bukkit.getPluginManager().registerEvents(new NMSInjectListener(this), this);
-        getLogger().info("Firma injection listener registered.");
+        getLogger().info("Ferma injection listener registered.");
         
         // Register commands
         PaperCommandManager commandManager = new PaperCommandManager(this);
@@ -43,7 +43,7 @@ public final class Ferma extends JavaPlugin {
                 .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME)
                 .stream().map(biome -> biome.getKey().toString()).toList());
         commandManager.registerCommand(new FixupCommand(this));
-        getLogger().info("Firma commands registered.");
+        getLogger().info("Ferma commands registered.");
     }
     
     /**
@@ -62,11 +62,11 @@ public final class Ferma extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        getLogger().info("Firma shutting down...");
+        getLogger().info("Ferma shutting down...");
     }
 
     /**
-     * Called by Bukkit when a world is created with generator: Firma
+     * Called by Bukkit when a world is created with generator: Ferma
      *
      * The id parameter is a UID string that CANNOT be vanilla, void, or noise.
      * The type parameter is used to specify the generation mode:
@@ -77,22 +77,30 @@ public final class Ferma extends JavaPlugin {
      * Example bukkit.yml:
      *   worlds:
      *     my_world:
-     *       generator: Firma:passthrough
+     *       generator: Ferma:vanilla_noise
      */
     @Override
     public @Nullable ChunkGenerator getDefaultWorldGenerator(@NotNull String worldName, @Nullable String id) {
-        getLogger().info("Creating Firma generator for world: " + worldName + " with id: " + id);
+        getLogger().info("Creating Ferma generator for world: " + worldName + " with id: " + id);
         
         // Reject unknown pack ids loudly - silently falling back to vanilla
         // would let a typo silently produce a normal world.
         if (id != null && !id.isEmpty() && !isReservedName(id) && !hasPack(id)) {
-            getLogger().severe("Unknown Firma generator id '" + id + "' for world '" + worldName + "'.");
+            getLogger().severe("Unknown Ferma generator id '" + id + "' for world '" + worldName + "'.");
             getLogger().severe("Valid options: 'vanilla', 'void', or one of the loaded pack ids: " + packs.keySet());
             throw new IllegalArgumentException(
-                "Unknown Firma generator id '" + id + "'. World creation aborted."
+                "Unknown Ferma generator id '" + id + "'. World creation aborted."
             );
         }
-        
+
+        // Primary noise-graph gate for pack worlds: validate the vanilla settings graphs
+        // before handing over a generator. Throws on an externally modified graph; the
+        // exception propagates out of WorldCreator.createWorld(), which Bukkit and
+        // Multiverse handle as a clean creation failure. No world is created.
+        if (id != null && hasPack(id)) {
+            org.evlis.firma.NMS.GraphSurgeryDiagnostic.validateVanillaStructure(getLogger());
+        }
+
         final String finalId = id;
         return generatorMap.computeIfAbsent(worldName, name -> new FermaChunkGenerator(this, finalId));
     }
@@ -104,7 +112,7 @@ public final class Ferma extends JavaPlugin {
         return id.equals("vanilla") || id.equals("void") || id.equals("noise");
     }
 
-    public boolean isFirmaWorld(World world) {
+    public boolean isFermaWorld(World world) {
         return generatorMap.containsKey(world.getName());
     }
 }

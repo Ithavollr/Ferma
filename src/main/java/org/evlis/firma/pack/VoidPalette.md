@@ -6,8 +6,8 @@ coordinates**, primarily for starting platforms. Mirrors Terra's palette format:
 
 ## Current state
 
-- Void worlds are configured via `bukkit.yml` generator string: `Firma:void`
-- `FirmaChunkGenerator` returns empty chunks when `mode == GenerationMode.VOID`
+- Void worlds are configured via `bukkit.yml` generator string: `Ferma:void`
+- `FermaChunkGenerator` returns empty chunks when `mode == GenerationMode.VOID`
 - `NMSChunkGeneratorDelegate.fillFromNoise()` returns chunk as-is in void mode
 - Void mode has NO pack association — it's a reserved keyword, not a pack id
 - There is no way to customize what blocks appear in a void world
@@ -16,7 +16,7 @@ coordinates**, primarily for starting platforms. Mirrors Terra's palette format:
 
 ### Pack format
 
-Void packs live alongside climate packs in `plugins/Firma/packs/<id>/pack.yml`.
+Void packs live alongside climate packs in `plugins/Ferma/packs/<id>/pack.yml`.
 They declare `type: void` to distinguish from climate packs (which are `type: pack` or have no type).
 
 ```yaml
@@ -45,7 +45,7 @@ owns all void-world behavior:
 
 - **Holds** the `VoidPalette` (nullable) and the resolved `Map<String, BlockState>` cache.
 - **Provides** `fillChunk(ChunkAccess chunk)` — looks up palette entries for the chunk and
-  sets blocks. No-ops if palette is null (bare `Firma:void`).
+  sets blocks. No-ops if palette is null (bare `Ferma:void`).
 - **Extensible** — future void features (spawn platform rules, void-world gamerules, etc.)
   live here, not scattered across the delegate.
 
@@ -61,8 +61,8 @@ return vanilla.fillFromNoise(...);
 ### How it integrates
 
 - `GenerationMode` gets no new enum value — void palette worlds are still `VOID` mode.
-- The `Firma:void` bare keyword continues to work as a fully empty void world (no palette).
-- Void packs declare `type: void` and are associated with a pack id (e.g. `Firma:void_platform`).
+- The `Ferma:void` bare keyword continues to work as a fully empty void world (no palette).
+- Void packs declare `type: void` and are associated with a pack id (e.g. `Ferma:void_platform`).
 - `NMSInjectListener` creates a `VoidChunkHandler` (with or without palette) and passes it
   to `NMSChunkGeneratorDelegate`.
 
@@ -81,7 +81,7 @@ The palette is indexed at load time into a `Map<Long, List<PaletteEntry>>` keyed
 
 ### Step 1: Parse palette from pack YAML
 
-**Files:** `VoidPalette.java` (new), `PackLoader.java`, `FirmaPack.java`
+**Files:** `VoidPalette.java` (new), `PackLoader.java`, `FermaPack.java`
 
 - `VoidPalette` is a record holding:
   - `List<PaletteEntry> entries` — raw list of `(x, y, z, blockId)` tuples.
@@ -91,7 +91,7 @@ The palette is indexed at load time into a `Map<Long, List<PaletteEntry>>` keyed
   values are block resource locations (e.g. `"minecraft:bedrock"`).
 - Validate: y in `[-64, 320]`, block ids must match `[a-z0-9_]+:[a-z0-9_/]+`.
 - A void pack with no `palette` section is valid (fully empty void world).
-- `FirmaPack` gets a `@Nullable VoidPalette voidPalette` field (null for non-void packs).
+- `FermaPack` gets a `@Nullable VoidPalette voidPalette` field (null for non-void packs).
 
 **Build verification:** `./gradlew build` compiles. Existing tests pass. No runtime behavior changes yet.
 
@@ -112,15 +112,15 @@ The palette is indexed at load time into a `Map<Long, List<PaletteEntry>>` keyed
 
 ### Step 3: Route through generator setup
 
-**Files:** `FirmaChunkGenerator.java`, `Firma.java`, `NMSInjectListener.java`, `NMSChunkGeneratorDelegate.java`
+**Files:** `FermaChunkGenerator.java`, `Ferma.java`, `NMSInjectListener.java`, `NMSChunkGeneratorDelegate.java`
 
-- `Firma.getDefaultWorldGenerator()` with a `type: void` pack id creates `FirmaChunkGenerator` with
+- `Ferma.getDefaultWorldGenerator()` with a `type: void` pack id creates `FermaChunkGenerator` with
   `GenerationMode.VOID` and stores the `VoidPalette` from the pack.
-- `FirmaChunkGenerator` gets a `@Nullable VoidPalette palette` field and getter.
+- `FermaChunkGenerator` gets a `@Nullable VoidPalette palette` field and getter.
 - `NMSInjectListener` creates `VoidChunkHandler(palette)` and passes it to
   `NMSChunkGeneratorDelegate` (new constructor parameter: `@Nullable VoidChunkHandler`).
 - `NMSChunkGeneratorDelegate.fillFromNoise()` calls `voidHandler.fillChunk(chunk)` when in void mode.
-- The bare `Firma:void` keyword produces a `VoidChunkHandler(null)` (empty world, no change from today).
+- The bare `Ferma:void` keyword produces a `VoidChunkHandler(null)` (empty world, no change from today).
 
 **Build verification:** `./gradlew build` compiles. Create a void pack with a palette and verify only
 the specified coordinates receive blocks in-game.

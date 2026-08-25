@@ -4,19 +4,19 @@ import net.minecraft.util.KeyDispatchDataCodec;
 import net.minecraft.world.level.levelgen.DensityFunction;
 
 /**
- * Interface for Firma's custom climate noise functions.
+ * Interface for Ferma's custom climate noise functions.
  * These replace vanilla's climate density functions in Stage 2.
  */
 public interface FermaClimateFunction extends DensityFunction {
     
     /**
-     * Shared fail-on-encode codec for the simple Firma climate functions ({@code Identity},
+     * Shared fail-on-encode codec for the simple Ferma climate functions ({@code Identity},
      * {@code Constant}). These objects must never appear in a serialized form: encoding
      * triggers a loud error to prevent silent {@code level.dat} corruption. Decoding returns
      * a zero {@code Constant} as a recovery sentinel.
      */
     KeyDispatchDataCodec<? extends DensityFunction> CONSTANT_CODEC =
-        KeyDispatchDataCodec.of(UnserializableMapCodec.of("FirmaClimateFunction(Identity|Constant)", new Constant(0.0)));
+        KeyDispatchDataCodec.of(UnserializableMapCodec.of("FermaClimateFunction(Identity|Constant)", new Constant(0.0)));
     
     /**
      * Compute the climate value at the given coordinates.
@@ -169,7 +169,7 @@ public interface FermaClimateFunction extends DensityFunction {
         @Override
         public KeyDispatchDataCodec<? extends DensityFunction> codec() {
             return KeyDispatchDataCodec.of(
-                UnserializableMapCodec.of("FirmaClimateFunction.WeirdnessToRidges", this));
+                UnserializableMapCodec.of("FermaClimateFunction.WeirdnessToRidges", this));
         }
     }
 }

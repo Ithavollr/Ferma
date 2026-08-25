@@ -28,7 +28,7 @@ This keeps destructive writes separate from discovery and gives the operator ful
 
 ### Goal
 
-Produce a **scan report** (`plugins/Firma/fixup/<world>-scan.yml`) that lists every invalid biome string found, the chunks it appears in, and the proposed replacement.
+Produce a **scan report** (`plugins/Ferma/fixup/<world>-scan.yml`) that lists every invalid biome string found, the chunks it appears in, and the proposed replacement.
 
 ### Chunk Iteration Strategy
 
@@ -84,7 +84,7 @@ Returns `null` if the biome is not registered (including datapack biomes that ar
 
 ### Scanner Output Format
 
-Write to `plugins/Firma/fixup/<world>-scan.yml`:
+Write to `plugins/Ferma/fixup/<world>-scan.yml`:
 
 ```yaml
 world: world_the_end
@@ -116,7 +116,7 @@ The `proposed_replacement` is our best guess; empty string means the user must f
 
 ### Proposed Replacement Logic
 
-1. **Explicit pre-seed mappings** — `plugins/Firma/fixup/defaults.yml` (user-editable, ships with common mappings)
+1. **Explicit pre-seed mappings** — `plugins/Ferma/fixup/defaults.yml` (user-editable, ships with common mappings)
 2. **String reconstruction** — parse namespace, infer from dimension
 3. **Dimension default** — fallback per `World.Environment`
 
@@ -155,7 +155,7 @@ Read an approved YAML mapping file and rewrite biome palettes **online** for all
 
 ### Mapping File (input to fixer)
 
-`plugins/Firma/fixup/<world>-fix.yml`:
+`plugins/Ferma/fixup/<world>-fix.yml`:
 
 ```yaml
 world: world_the_end
