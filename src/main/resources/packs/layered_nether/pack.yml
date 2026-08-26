@@ -1,41 +1,108 @@
-# Layered Nether — demo pack for altitude-banded climate (y_gradient).
+# Layered Nether — altitude-banded temperature over Incendium's 3D climate field.
 #
 # Intended for a nether-settings world:
 #   /mv create <name> nether --generator Ferma:layered_nether
 #
-# Vanilla's nether is climate-flat vertically: temperature and vegetation are sampled with
-# y_scale 0.0, so a biome column runs unbroken from bedrock to roof. Replacing temperature
-# with a vertical gradient stratifies the five nether biomes by altitude, since they are
-# distinguished by temperature/humidity:
-#   basalt_deltas  T=-0.5 | nether_wastes / soul_sand_valley / warped_forest  T=0.0
-#   crimson_forest T= 0.4
-# Ramping temperature -0.5 -> 0.4 over y 0..128 walks through those bands bottom to top.
-# Humidity is left unconfigured, so it keeps vanilla's horizontal variation and still
-# separates soul sand valley / wastes / warped forest within each band.
+# Vanilla's nether is climate-flat vertically: every axis is sampled with y_scale 0.0, so a
+# biome column runs unbroken from bedrock to roof. This pack replaces temperature with a
+# vertical gradient to stratify biomes by altitude, and drives the remaining five axes as 3D
+# noise so a multi-biome nether list actually has room to separate.
+#
+# The five noise axes mirror Incendium's own router
+# (data/minecraft/worldgen/noise_settings/nether.json -> incendium:climate/*), which is the
+# working reference for this biome set. Two things carry over from it:
+#
+#   1. Every axis has y_scale at half its xz_scale. That is the vertical variation — 3D
+#      climate noise, not a gradient. Vanilla's y_scale 0.0 is what makes its columns solid.
+#
+#   2. Incendium separates terrain depth from lookup depth. Its router's `depth` field points
+#      at climate/purity — a plain 3D noise — while climate/depth (a y_clamped_gradient plus
+#      the offset splines) is used only in initial_density_without_jaggedness, i.e. terrain
+#      shaping. Freeing the depth axis from terrain turns it into a sixth independent
+#      discriminator, and it is what separates biomes that are identical on temperature and
+#      humidity: inverted_forest (depth 0.1) vs warped_forest (depth 0). `depth` below is
+#      that purity field, not a terrain quantity.
+#
+# Configuring depth is permitted here because nether settings are decoupled — depth is a
+# plain constant there rather than a composite of the offset splines, so Ferma allows it.
+#
+# temperature is the one axis NOT mirrored: it is the y_gradient that gives this pack its
+# purpose. Biomes separated by temperature band by altitude instead of scattering
+# horizontally; every other axis keeps Incendium's 3D behaviour.
+#
+# min_value/max_value clamp in Ferma (DoublePerlinClimateFunction); Incendium's
+# shifted_noise does not clamp at all. +-3.0 sits just inside the natural range of these
+# amplitude sets — vanilla_noise documents +-3.38625 for the [1,1] shape at first_octave -8 —
+# so only the extreme tails clip and the field keeps its full working spread. Do not tighten
+# these toward a biome list's parameter span: clipping the body of the noise flattens it into
+# saturated plateaus.
+#
+# Ferma's `shifted_noise` type unwraps to its inner double_perlin and discards the shift
+# configs (ClimateFunctionFactory.buildShiftedNoise), and DoublePerlinClimateFunction already
+# applies the vanilla shift_x/shift_z with no y-shift. double_perlin is therefore the direct
+# equivalent of Incendium's minecraft:shifted_noise entries.
 
 schema_version: 1
 id: layered_nether
 name: "Layered Nether"
-description: "Altitude-banded nether biomes via a vertical temperature gradient"
+description: "Altitude-banded nether temperature over Incendium-style 3D climate noise"
 type: noise
 
 climate:
+  # The altitude banding. Ramps bottom-to-top across the nether biome temperature spread.
   temperature:
     type: y_gradient
     from_y: 0
     from_value: -0.5
-    to_y: 128
+    to_y: 192
     to_value: 0.4
 
-  # Depth is configurable on decoupled settings (caves/floating_islands/nether) because it
-  # is a plain constant there rather than a composite of the offset splines. Set here to
-  # exercise that path; note it does NOT move vanilla nether biomes, which all carry depth
-  # target 0.0 — an equal distance penalty for every candidate cannot change the nearest.
-  # It takes effect where candidate biomes differ in depth (caves-settings worlds using the
-  # overworld biome set, or datapack biomes with varied depth targets).
+  # mirrors incendium:climate/humidity
+  humidity:
+    type: double_perlin
+    first_octave: -8
+    amplitudes: [1.0, 1.0]
+    xz_scale: 0.25
+    y_scale: 0.125
+    min_value: -3.0
+    max_value: 3.0
+
+  # mirrors incendium:climate/continentalness
+  continentalness:
+    type: double_perlin
+    first_octave: -8
+    amplitudes: [1.0, 1.0, 0.5, 2.25]
+    xz_scale: 0.25
+    y_scale: 0.125
+    min_value: -3.0
+    max_value: 3.0
+
+  # mirrors incendium:climate/erosion
+  erosion:
+    type: double_perlin
+    first_octave: -8
+    amplitudes: [1.0, 1.0, 0.5, 2.25]
+    xz_scale: 0.19
+    y_scale: 0.095
+    min_value: -3.0
+    max_value: 3.0
+
+  # mirrors incendium:climate/purity — the lookup-depth field, not terrain depth
   depth:
-    type: y_gradient
-    from_y: 0
-    from_value: 1.0
-    to_y: 128
-    to_value: -1.0
+    type: double_perlin
+    first_octave: -8
+    amplitudes: [1.0, 1.0]
+    xz_scale: 0.2
+    y_scale: 0.1
+    min_value: -3.0
+    max_value: 3.0
+
+  # mirrors incendium:climate/weirdness
+  weirdness:
+    type: double_perlin
+    first_octave: -7
+    amplitudes: [1.0, 1.0, 1.25, 0.75]
+    xz_scale: 0.225
+    y_scale: 0.1125
+    min_value: -3.0
+    max_value: 3.0
