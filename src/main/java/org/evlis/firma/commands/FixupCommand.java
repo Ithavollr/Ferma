@@ -21,7 +21,14 @@ public class FixupCommand extends BaseCommand {
     public FixupCommand(Plugin plugin) {
         this.plugin = plugin;
     }
-    
+
+    @Default
+    public void defCommand(CommandSender sender) {
+        sender.sendMessage("You are running Ferma v" + plugin.getPluginMeta().getVersion());
+        // TODO standing: keep this list in sync when adding/removing @Subcommand handlers
+        sender.sendMessage("Available commands: scan, fix, biomelook, biomeswap, unload, restore, status, cancel");
+    }
+
     @Subcommand("scan")
     @CommandPermission("ferma.command.scan")
     @CommandCompletion("@worlds")
