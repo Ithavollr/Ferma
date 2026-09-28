@@ -41,6 +41,7 @@ java {
 // needs no code change and cannot silently drop a shipped pack.
 val packsDir = layout.projectDirectory.dir("src/main/resources/packs")
 val generatePackIndex by tasks.registering {
+    val packsDir = packsDir // local copy: a top-level val captured in doLast drags the script object into the configuration cache
     val outputFile = layout.buildDirectory.file("generated/packs/packs/index.txt")
     inputs.dir(packsDir).withPropertyName("packs")
     outputs.file(outputFile).withPropertyName("index")
