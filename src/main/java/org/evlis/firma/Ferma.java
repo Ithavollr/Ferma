@@ -3,6 +3,10 @@ package org.evlis.firma;
 import co.aikar.commands.PaperCommandManager;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
+import org.bukkit.WorldCreator;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.evlis.firma.NMS.NMSInjectListener;
@@ -15,7 +19,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public final class Ferma extends JavaPlugin {
+public final class Ferma extends JavaPlugin implements Listener {
     // Thread-safe map for concurrent world initialization
     private final Map<String, FermaChunkGenerator> generatorMap = new ConcurrentHashMap<>();
     // Loaded packs (id -> pack)
@@ -35,7 +39,12 @@ public final class Ferma extends JavaPlugin {
         // Register the NMS injection listener
         Bukkit.getPluginManager().registerEvents(new NMSInjectListener(this), this);
         getLogger().info("Ferma injection listener registered.");
-        
+
+        // Dev servers (Gradle run tasks) pass "id:environment,..." to get one world per pack
+        if (System.getProperty("ferma.packWorlds") != null) {
+            Bukkit.getPluginManager().registerEvents(this, this);
+        }
+
         // Register commands
         PaperCommandManager commandManager = new PaperCommandManager(this);
         commandManager.getCommandCompletions().registerAsyncCompletion("biomes", c ->
@@ -58,6 +67,27 @@ public final class Ferma extends JavaPlugin {
      */
     public boolean hasPack(String id) {
         return packs.containsKey(id);
+    }
+
+    /**
+     * Create or load ferma_&lt;id&gt; for each "id:environment" entry of -Dferma.packWorlds.
+     * createWorld loads an existing world folder and generates a missing one. Runs on the
+     * main thread, so AutoStop's delayed stop cannot interrupt it.
+     */
+    @EventHandler
+    public void onServerLoad(ServerLoadEvent event) {
+        for (String entry : System.getProperty("ferma.packWorlds").split(",")) {
+            String[] parts = entry.split(":");
+            String worldName = "ferma_" + parts[0];
+            try {
+                new WorldCreator(worldName)
+                    .environment(World.Environment.valueOf(parts[1].toUpperCase()))
+                    .generator("Ferma:" + parts[0])
+                    .createWorld();
+            } catch (Exception e) {
+                getLogger().severe("Failed to create pack world '" + worldName + "': " + e.getMessage());
+            }
+        }
     }
 
     @Override

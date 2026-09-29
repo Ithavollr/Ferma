@@ -1,0 +1,11 @@
+# True Void
+# A void world with no blocks at all: no platform, no palette.
+#
+# A void pack without a palette key generates empty chunks (VoidChunkHandler returns
+# immediately on a null palette).
+
+schema_version: 1
+id: true_void
+name: "True Void"
+description: "Completely empty void..."
+type: void

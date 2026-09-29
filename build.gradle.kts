@@ -102,6 +102,27 @@ tasks {
     }
 }
 
+// Mirror the source packs into the run server so every run uses the current pack files.
+// Ferma only extracts packs when its packs folder is missing, so a stale copy would persist.
+val syncRunPacks by tasks.registering(Sync::class) {
+    from(packsDir)
+    into(layout.projectDirectory.dir("run/plugins/Ferma/packs"))
+}
+
+// One world per pack on every run server: Ferma creates or loads ferma_<id> at startup,
+// so a deleted world regenerates on the next start.
+// wozniak: environment defaults to normal; add any non-overworld pack here. A pack created in
+// the wrong environment is not guaranteed to trip runServerTest's log check.
+val packEnvironments = mapOf("layered_nether" to "nether", "true_void" to "the_end")
+val packIds = packsDir.asFile.listFiles { f: File -> f.isDirectory && File(f, "pack.yml").isFile }
+    ?.map { it.name }
+    ?.sorted()
+    ?: emptyList()
+tasks.withType<RunServer>().configureEach {
+    dependsOn(syncRunPacks)
+    systemProperty("ferma.packWorlds", packIds.joinToString(",") { "$it:${packEnvironments[it] ?: "normal"}" })
+}
+
 // Test Paper run & immediately shut down, for github actions
 tasks.register<RunServer>("runServerTest") {
     dependsOn(tasks.shadowJar)
@@ -115,6 +136,18 @@ tasks.register<RunServer>("runServerTest") {
     val eulaFile = layout.projectDirectory.file("run/eula.txt").asFile
     doFirst {
         eulaFile.apply { parentFile.mkdirs() }.writeText("eula=true\n")
+    }
+    // Fail the run if any pack world was refused, failed, or never injected.
+    val logFile = layout.projectDirectory.file("run/logs/latest.log").asFile
+    val expectedPacks = packIds // local copy: a top-level val captured in doLast drags the script object into the configuration cache
+    doLast {
+        val log = logFile.readText()
+        val errors = listOf("will not govern", "assertion FAILED", "Failed to load pack", "Failed to create pack world")
+            .filter { log.contains(it) }
+        val missing = expectedPacks.filter { !log.contains("Injecting Ferma into world: ferma_$it") }
+        if (errors.isNotEmpty() || missing.isNotEmpty()) {
+            throw GradleException("Ferma pack worlds failed - errors: $errors, packs without a world: $missing (see $logFile)")
+        }
     }
 }
 // Start a local test server for login & manual testing

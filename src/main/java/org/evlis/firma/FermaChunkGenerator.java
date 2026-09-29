@@ -53,7 +53,7 @@ public class FermaChunkGenerator extends ChunkGenerator {
         this.packId = modeId;
         this.mode = parseMode(modeId);
         this.voidPalette = loadVoidPalette(modeId);
-        plugin.getLogger().info("Created Ferma generator with mode: " + mode + (mode == GenerationMode.NOISE ? " (pack: " + modeId + ")" : ""));
+        plugin.getLogger().info("Created Ferma generator with mode: " + mode + (mode != GenerationMode.VANILLA ? " (pack: " + modeId + ")" : ""));
     }
 
     /**
@@ -103,10 +103,10 @@ public class FermaChunkGenerator extends ChunkGenerator {
     }
     
     /**
-     * Get the pack for this generator (only valid in NOISE mode).
+     * Get the pack for this generator (null in VANILLA mode, which has no pack).
      */
     public @Nullable FermaPack getPack() {
-        if (mode != GenerationMode.NOISE) {
+        if (mode == GenerationMode.VANILLA) {
             return null;
         }
         if (cachedPack == null && packId != null) {

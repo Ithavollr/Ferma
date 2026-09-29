@@ -137,35 +137,32 @@ public class PackLoader {
                 } else if (paletteObj != null) {
                     logger.warning("Pack '" + packId + "' has type: void but palette is not a map - ignoring");
                 }
-                // Void packs don't have climate section
-            } else {
-                // Parse climate section for normal packs
-                Object climateObj = data.get("climate");
-                if (climateObj instanceof Map) {
-                    Map<String, Object> climateMap = (Map<String, Object>) climateObj;
-                    // Valid climate parameters (depth is not configurable - it's always derived)
-                    // depth is configurable only on decoupled settings (caves/floating_islands/
-                    // nether), where it is a constant; on the overworld family it is a composite
-                    // of the offset splines and is never replaced. That check needs the world's
-                    // settings and therefore happens at world init, not here.
-                    Set<String> validParams = Set.of("temperature", "humidity", "continentalness", "erosion", "weirdness", "depth");
+            }
 
-                    for (Map.Entry<String, Object> entry : climateMap.entrySet()) {
-                        String param = entry.getKey();
-                        Object configObj = entry.getValue();
+            // Parse climate section
+            Object climateObj = data.get("climate");
+            if (climateObj instanceof Map) {
+                Map<String, Object> climateMap = (Map<String, Object>) climateObj;
+                // depth is configurable only on decoupled settings (caves/floating_islands/
+                // nether), where it is a constant; on the overworld family it is a composite
+                // of the offset splines and is never replaced.
+                Set<String> validParams = Set.of("temperature", "humidity", "continentalness", "erosion", "weirdness", "depth");
 
-                        // Validate parameter name
-                        if (!validParams.contains(param)) {
-                            throw new IllegalArgumentException("Unknown climate parameter '" + param + "' in pack '" + packId + "'. Valid parameters are: " + validParams);
-                        }
+                for (Map.Entry<String, Object> entry : climateMap.entrySet()) {
+                    String param = entry.getKey();
+                    Object configObj = entry.getValue();
 
-                        if (configObj instanceof Map) {
-                            try {
-                                ClimateFunctionConfig config = parseClimateConfig((Map<String, Object>) configObj);
-                                climate.put(param, config);
-                            } catch (Exception e) {
-                                throw new IllegalArgumentException("Failed to parse climate config for '" + param + "' in pack '" + packId + "': " + e.getMessage(), e);
-                            }
+                    // Validate parameter name
+                    if (!validParams.contains(param)) {
+                        throw new IllegalArgumentException("Unknown climate parameter '" + param + "' in pack '" + packId + "'. Valid parameters are: " + validParams);
+                    }
+
+                    if (configObj instanceof Map) {
+                        try {
+                            ClimateFunctionConfig config = parseClimateConfig((Map<String, Object>) configObj);
+                            climate.put(param, config);
+                        } catch (Exception e) {
+                            throw new IllegalArgumentException("Failed to parse climate config for '" + param + "' in pack '" + packId + "': " + e.getMessage(), e);
                         }
                     }
                 }
