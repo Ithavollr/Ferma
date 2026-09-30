@@ -153,7 +153,7 @@ public class FixupCommand extends BaseCommand {
         String key = ((org.bukkit.craftbukkit.CraftWorld) player.getWorld()).getHandle()
             .getBiome(new net.minecraft.core.BlockPos(x, y, z))
             .unwrapKey()
-            .map(k -> k.location().toString())
+            .map(k -> k.identifier().toString())
             .orElse("(unregistered inline biome)");
         player.sendMessage(String.format("§7Biome at §f%d %d %d§7: §f%s", x, y, z, key));
     }

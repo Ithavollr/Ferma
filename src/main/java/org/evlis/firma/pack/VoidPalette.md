@@ -106,7 +106,7 @@ The palette is indexed at load time into a `Map<Long, List<PaletteEntry>>` keyed
   - If palette is null, return immediately (empty void world).
   - Look up `palette.byChunk.get(ChunkPos.asLong(chunk.getPos().x, chunk.getPos().z))`.
   - If null (no entries in this chunk), return.
-  - For each `PaletteEntry`, call `chunk.setBlockState(new BlockPos(x, y, z), resolvedState, false)`.
+  - For each `PaletteEntry`, call `chunk.setBlockState(new BlockPos(x, y, z), resolvedState, 0)`.
 
 **Build verification:** `./gradlew build` compiles. Class exists but is not wired yet.
 
