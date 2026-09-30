@@ -3,7 +3,7 @@ import xyz.jpenilla.runpaper.task.RunServer
 
 plugins {
     id("java-library")
-    id("io.papermc.paperweight.userdev") version "2.0.0-beta.14"
+    id("io.papermc.paperweight.userdev") version "2.0.0-beta.19"
     id("xyz.jpenilla.run-paper") version "3.0.2"
     id("com.gradleup.shadow") version "9.4.1"
 }
@@ -23,8 +23,8 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
-    paperweight.paperDevBundle("1.21.4-R0.1-SNAPSHOT")
+    compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
+    paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
     implementation("xyz.jpenilla:reflection-remapper:0.1.2")
     implementation("co.aikar:acf-paper:0.5.1-SNAPSHOT")
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
@@ -64,7 +64,7 @@ sourceSets.main {
 
 tasks {
     runServer {
-        minecraftVersion("1.21.4")
+        minecraftVersion("1.21.11")
         jvmArgs("-Xms2G", "-Xmx2G")
     }
 
@@ -126,8 +126,8 @@ tasks.withType<RunServer>().configureEach {
 // Test Paper run & immediately shut down, for github actions
 tasks.register<RunServer>("runServerTest") {
     dependsOn(tasks.shadowJar)
-    // Accept a Minecraft version via -PmcVersion=1.21.5, default to 1.21.4
-    val mcVersion = project.findProperty("mcVersion") as String? ?: "1.21.4"
+    // Accept a Minecraft version via -PmcVersion=1.21.5, default to 1.21.11
+    val mcVersion = project.findProperty("mcVersion") as String? ?: "1.21.11"
     minecraftVersion(mcVersion)
     downloadPlugins {
         github("Ifiht", "AutoStop", "v1.2.0", "AutoStop-1.2.0.jar")
@@ -151,9 +151,9 @@ tasks.register<RunServer>("runServerTest") {
     }
 }
 // Start a local test server for login & manual testing
-tasks.register<RunServer>("runServerInteractive_1-21-4") {
+tasks.register<RunServer>("runServerInteractive_1-21-11") {
     dependsOn(tasks.shadowJar)
-    minecraftVersion("1.21.4")
+    minecraftVersion("1.21.11")
     downloadPlugins {
         hangar("Multiverse-Core", "5.6.1")
         hangar("Chunky", "1.4.40")
