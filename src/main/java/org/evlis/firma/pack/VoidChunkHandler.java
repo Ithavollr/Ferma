@@ -76,9 +76,9 @@ public class VoidChunkHandler {
             String namespace = parts[0];
             String path = parts[1];
 
-            // Build the ResourceLocation and look up the block
-            net.minecraft.resources.ResourceLocation location =
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(namespace, path);
+            // Build the Identifier and look up the block
+            net.minecraft.resources.Identifier location =
+                net.minecraft.resources.Identifier.fromNamespaceAndPath(namespace, path);
             java.util.Optional<net.minecraft.core.Holder.Reference<Block>> holder = BuiltInRegistries.BLOCK.get(location);
 
             return holder.map(h -> h.value().defaultBlockState()).orElse(null);
@@ -120,7 +120,7 @@ public class VoidChunkHandler {
 
             // Use world coordinates directly - ChunkAccess handles the mapping
             BlockPos pos = new BlockPos(entry.x(), entry.y(), entry.z());
-            chunk.setBlockState(pos, state, false);
+            chunk.setBlockState(pos, state, 0);
         }
     }
 }
