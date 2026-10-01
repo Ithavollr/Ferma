@@ -167,7 +167,7 @@ public final class GraphSurgeryDiagnostic {
 
         Map<String, DensityFunction> terrainFields = new LinkedHashMap<>();
         terrainFields.put("depth", wiredRouter.depth());
-        terrainFields.put("initialDensityWithoutJaggedness", wiredRouter.initialDensityWithoutJaggedness());
+        terrainFields.put("preliminarySurfaceLevel", wiredRouter.preliminarySurfaceLevel());
         terrainFields.put("finalDensity", wiredRouter.finalDensity());
 
         Map<String, DensityFunction> climateNoises = new LinkedHashMap<>();
@@ -205,7 +205,7 @@ public final class GraphSurgeryDiagnostic {
 
         Map<String, DensityFunction> terrainFields = new LinkedHashMap<>();
         terrainFields.put("depth", wiredRouter.depth());
-        terrainFields.put("initialDensityWithoutJaggedness", wiredRouter.initialDensityWithoutJaggedness());
+        terrainFields.put("preliminarySurfaceLevel", wiredRouter.preliminarySurfaceLevel());
         terrainFields.put("finalDensity", wiredRouter.finalDensity());
 
         for (Map.Entry<String, DensityFunction> climate : climateFields.entrySet()) {

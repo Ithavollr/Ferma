@@ -155,11 +155,10 @@ tasks.register<RunServer>("runServerInteractive_1-21-11") {
     dependsOn(tasks.shadowJar)
     minecraftVersion("1.21.11")
     downloadPlugins {
-        hangar("Multiverse-Core", "5.6.1")
+        hangar("Multiverse-Core", "5.5.3")
         hangar("Chunky", "1.4.40")
-        modrinth("squaremap", "1.3.4")
+        hangar("squaremap", "1.3.12")
         modrinth("simple-fly", "0.0.1")
-        modrinth("terra", "6.6.1-BETA-bukkit")
     }
     pluginJars.from(tasks.shadowJar)
     systemProperty("net.kyori.adventure.text.warnWhenLegacyFormattingDetected", "false")

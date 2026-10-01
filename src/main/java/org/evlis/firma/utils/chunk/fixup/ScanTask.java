@@ -3,7 +3,6 @@ package org.evlis.firma.utils.chunk.fixup;
 import ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.craftbukkit.CraftWorld;
@@ -13,11 +12,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -207,7 +202,7 @@ public class ScanTask implements Runnable {
      */
     private synchronized void processChunk(ServerLevel serverLevel, CompoundTag chunkData, int x, int z) {
         try {
-            CompoundTag upgraded = serverLevel.getChunkSource().chunkMap.upgradeChunkTag(chunkData, new ChunkPos(x, z));
+            CompoundTag upgraded = serverLevel.getChunkSource().chunkMap.upgradeChunkTag(chunkData);
             Set<String> biomeKeys = extractor.extractBiomeKeys(upgraded);
             Set<String> invalidBiomes = new HashSet<>();
 
@@ -229,10 +224,12 @@ public class ScanTask implements Runnable {
             // the write trigger is "a mapped key is present", not "an invalid key is present" —
             // biomeswap replaces valid-but-wrong biomes too
             if (fixMode() && biomeKeys.stream().anyMatch(replacements::containsKey)) {
-                // guard against a region header pointing at the wrong chunk (mirrors ChunkStorage.write's check)
-                if (upgraded.getInt("xPos") != x || upgraded.getInt("zPos") != z) {
-                    logger.warning(String.format("Chunk (%d, %d) has mismatched stored position (%d, %d); not fixing it",
-                        x, z, upgraded.getInt("xPos"), upgraded.getInt("zPos")));
+                // guard against a region header pointing at the wrong chunk; stricter than vanilla's
+                // getIntOr("xPos", 0) (SerializableChunkData:154): a missing position is refused, not read as 0
+                Optional<Integer> storedX = upgraded.getInt("xPos"), storedZ = upgraded.getInt("zPos");
+                if (!storedX.equals(Optional.of(x)) || !storedZ.equals(Optional.of(z))) {
+                    logger.warning(String.format("Chunk (%d, %d) has mismatched stored position (%s, %s); not fixing it",
+                        x, z, storedX.map(String::valueOf).orElse("missing"), storedZ.map(String::valueOf).orElse("missing")));
                 } else if (extractor.replaceBiomeKeys(upgraded, replacements)) {
                     pendingWrites.add(new PendingWrite(x, z, upgraded));
                 }
@@ -356,7 +353,7 @@ public class ScanTask implements Runnable {
             if (fixMode()) {
                 sender.sendMessage("§7Chunks fixed: §f" + fixedChunks);
                 if (!skippedLoaded.isEmpty()) {
-                    sender.sendMessage("§eSkipped §f" + skippedLoaded.size() + " §eloaded chunk(s) — restart (or unload them), then re-run fix. Coords are in the report.");
+                    sender.sendMessage("§eSkipped §f" + skippedLoaded.size() + " §eloaded chunk(s) — run /ferma unload <world>, then re-run fix. Coords are in the report.");
                 }
             }
             sender.sendMessage("§7Duration: §f" + formatTime(duration));

@@ -26,7 +26,7 @@ public class FixupCommand extends BaseCommand {
     public void defCommand(CommandSender sender) {
         sender.sendMessage("You are running Ferma v" + plugin.getPluginMeta().getVersion());
         // TODO standing: keep this list in sync when adding/removing @Subcommand handlers
-        sender.sendMessage("Available commands: scan, fix, biomelook, biomeswap, unload, restore, status, cancel");
+        sender.sendMessage("Available commands: scan, fix, biomelook, biomeswap, unload, status, cancel");
     }
 
     @Subcommand("scan")
@@ -196,7 +196,7 @@ public class FixupCommand extends BaseCommand {
     @Subcommand("unload")
     @CommandPermission("ferma.command.unload")
     @CommandCompletion("@worlds")
-    @Description("Release a world's spawn chunks (spawn chunk radius -> 0) so fix can reach them")
+    @Description("Remove EVERY chunk ticket in a world (players, forceload, plugins included) so fix can reach all chunks")
     @Syntax("<world>")
     public void onUnload(CommandSender sender, String worldName) {
         World world = Bukkit.getWorld(worldName);
@@ -205,93 +205,32 @@ public class FixupCommand extends BaseCommand {
             return;
         }
 
-        Integer previous = world.getGameRuleValue(org.bukkit.GameRule.SPAWN_CHUNK_RADIUS);
-
-        // record the original before touching anything — gamerules persist in level.dat across reboots
-        try {
-            Map<String, Map<String, Object>> pending = loadRestoreGamerules();
-            Map<String, Object> entry = pending.computeIfAbsent(world.getName(), k -> new LinkedHashMap<>());
-            // never overwrite a recorded original with an already-zeroed value (double unload)
-            entry.putIfAbsent("spawnChunkRadius", previous);
-            saveRestoreGamerules(pending);
-        } catch (Exception e) {
-            sender.sendMessage("§cCould not record the original gamerule value (" + e.getMessage() + "); aborting unload.");
-            return;
+        // Blunt by design, for corrupted-world repair: no ticket type is exempt. FORCED tickets persist,
+        // so this also clears the world's /forceload list. Anything that re-adds its tickets (players
+        // moving, plugins) reloads those chunks.
+        // A ticket that keeps any chunk FULL has a ticket level <= FULL at its own position, so that
+        // position is itself a loaded chunk: scanning loaded chunks finds every holding ticket.
+        // Thread safety: TicketStorage.removeTicket -> Moonrise ChunkHolderManager.removeTicketAtLevel
+        // only mutates the ticket set under its area lock; a level drop is deferred to the owning
+        // world's own tick via a short-lived UNKNOWN ticket, so this is safe from the command thread.
+        net.minecraft.world.level.TicketStorage tickets = ((org.bukkit.craftbukkit.CraftWorld) world).getHandle()
+            .getChunkSource().chunkMap.getDistanceManager().ticketStorage;
+        int loadedBefore = world.getLoadedChunks().length;
+        Map<String, Integer> removed = new java.util.TreeMap<>();
+        for (org.bukkit.Chunk chunk : world.getLoadedChunks()) {
+            long pos = net.minecraft.world.level.ChunkPos.asLong(chunk.getX(), chunk.getZ());
+            for (net.minecraft.server.level.Ticket ticket : tickets.getTickets(pos)) {
+                if (tickets.removeTicket(pos, ticket)) {
+                    removed.merge(String.valueOf(net.minecraft.core.registries.BuiltInRegistries.TICKET_TYPE.getKey(ticket.getType())), 1, Integer::sum);
+                }
+            }
         }
 
-        world.setGameRule(org.bukkit.GameRule.SPAWN_CHUNK_RADIUS, 0);
-
-        sender.sendMessage(String.format("§7Spawn chunk radius for §f%s§7 set to §f0§7 (was §f%s§7); spawn chunks unload over the next ticks.",
-            world.getName(), previous));
-        sender.sendMessage(String.format("§7Currently loaded chunks: §f%d§7. Restore afterwards with: §f/ferma restore %s",
-            world.getLoadedChunks().length, world.getName()));
+        sender.sendMessage(String.format("§7Removed §f%d§7 ticket(s) from §f%d§7 loaded chunk(s) in §f%s§7; chunks unload over the next ticks.",
+            removed.values().stream().mapToInt(Integer::intValue).sum(), loadedBefore, world.getName()));
+        removed.forEach((type, count) -> sender.sendMessage("§7  " + type + ": §f" + count));
         if (!world.getPlayers().isEmpty()) {
-            sender.sendMessage("§e" + world.getPlayers().size() + " player(s) are in this world; chunks around them will stay loaded.");
-        }
-    }
-
-    @Subcommand("restore")
-    @CommandPermission("ferma.command.restore")
-    @CommandCompletion("@worlds")
-    @Description("Restore gamerules recorded by /ferma unload")
-    @Syntax("<world>")
-    public void onRestore(CommandSender sender, String worldName) {
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) {
-            sender.sendMessage("§cWorld not found: " + worldName);
-            return;
-        }
-
-        Map<String, Map<String, Object>> pending;
-        try {
-            pending = loadRestoreGamerules();
-        } catch (Exception e) {
-            sender.sendMessage("§cCould not read " + restoreGamerulesFile().getPath() + ": " + e.getMessage());
-            return;
-        }
-
-        Map<String, Object> entry = pending.remove(world.getName());
-        if (entry == null) {
-            sender.sendMessage("§7No recorded gamerules for " + world.getName() + ".");
-            return;
-        }
-
-        Object radius = entry.get("spawnChunkRadius");
-        if (radius instanceof Number n) {
-            world.setGameRule(org.bukkit.GameRule.SPAWN_CHUNK_RADIUS, n.intValue());
-            sender.sendMessage("§7Spawn chunk radius for §f" + world.getName() + "§7 restored to §f" + n.intValue() + "§7.");
-        }
-
-        try {
-            saveRestoreGamerules(pending);
-        } catch (Exception e) {
-            sender.sendMessage("§cGamerule restored, but failed to update " + restoreGamerulesFile().getPath() + ": " + e.getMessage());
-        }
-    }
-
-    private java.io.File restoreGamerulesFile() {
-        return new java.io.File(plugin.getDataFolder(), "fixup/restore-gamerules.yml");
-    }
-
-    /**
-     * Load the recorded original gamerule values: world name -> (gamerule -> value)
-     */
-    private Map<String, Map<String, Object>> loadRestoreGamerules() throws java.io.IOException {
-        java.io.File file = restoreGamerulesFile();
-        if (!file.exists()) {
-            return new LinkedHashMap<>();
-        }
-        try (java.io.FileReader reader = new java.io.FileReader(file)) {
-            Map<String, Map<String, Object>> loaded = new org.yaml.snakeyaml.Yaml().load(reader);
-            return loaded != null ? new LinkedHashMap<>(loaded) : new LinkedHashMap<>();
-        }
-    }
-
-    private void saveRestoreGamerules(Map<String, Map<String, Object>> pending) throws java.io.IOException {
-        java.io.File file = restoreGamerulesFile();
-        file.getParentFile().mkdirs();
-        try (java.io.FileWriter writer = new java.io.FileWriter(file)) {
-            new org.yaml.snakeyaml.Yaml().dump(pending, writer);
+            sender.sendMessage("§e" + world.getPlayers().size() + " player(s) are in this world; their chunks reload as their tickets are re-added.");
         }
     }
 
