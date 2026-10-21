@@ -21,7 +21,7 @@ Multiverse via the primary gate.
 1. Implement a replacement visitor in `FermaNoiseRouter`:
    - Obtain the canonical climate node for continents/erosion/ridges by unwrapping each
      wired router field (`HolderHolder` -> `MarkerOrMarked` -> inner node).
-   - `mapAll` over the wired `depth`, `initialDensityWithoutJaggedness`, `finalDensity`,
+   - `mapAll` over the wired `depth`, `preliminarySurfaceLevel`, `finalDensity`,
      replacing every node structurally equal (`equals`) to a canonical inner node with the
      pack's climate function. Marker wrappers are preserved (replacement happens at the
      inner-node level).

@@ -14,7 +14,7 @@ import java.util.List;
  * graph surgery.
  *
  * <p>Climate router fields are replaced directly. Terrain graphs ({@code depth},
- * {@code initialDensityWithoutJaggedness}, {@code finalDensity}) are rewritten with
+ * {@code preliminarySurfaceLevel}, {@code finalDensity}) are rewritten with
  * {@code mapAll}: every node structurally equal to a configured parameter's canonical
  * climate node (the inner node of its wired router field) is replaced by the pack's
  * function. Marker wrappers (flat_cache/cache_2d/interpolated) are preserved because
@@ -90,7 +90,7 @@ public class FermaNoiseRouter {
         // packDepth and rewriteTerrain are mutually exclusive (guarded above), so a
         // pack-configured depth is never also a terrain-rewrite target.
         DensityFunction depth = packDepth != null ? packDepth : wiredRouter.depth();
-        DensityFunction initialDensity = wiredRouter.initialDensityWithoutJaggedness();
+        DensityFunction preliminarySurface = wiredRouter.preliminarySurfaceLevel();
         DensityFunction finalDensity = wiredRouter.finalDensity();
         if (!canonical.isEmpty()) {
             DensityFunction.Visitor replacer = new DensityFunction.Visitor() {
@@ -105,7 +105,7 @@ public class FermaNoiseRouter {
                 }
             };
             depth = depth.mapAll(replacer);
-            initialDensity = initialDensity.mapAll(replacer);
+            preliminarySurface = preliminarySurface.mapAll(replacer);
             finalDensity = finalDensity.mapAll(replacer);
         }
 
@@ -121,7 +121,7 @@ public class FermaNoiseRouter {
             erosion,
             depth,
             weirdness,
-            initialDensity,
+            preliminarySurface,
             finalDensity,
             wiredRouter.veinToggle(),
             wiredRouter.veinRidged(),

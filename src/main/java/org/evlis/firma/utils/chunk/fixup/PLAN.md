@@ -63,7 +63,7 @@ for (LevelChunkSection section : nmsChunk.getSections()) {
       for (int y = 0; y < 4; y++)
         for (int z = 0; z < 4; z++) {
             Holder<Biome> holder = biomes.get(x, y, z);
-            holder.unwrapKey().ifPresent(k -> paletteEntries.add(k.location().toString()));
+            holder.unwrapKey().ifPresent(k -> paletteEntries.add(k.identifier().toString()));
         }
     // Check each entry against the registry
 }
@@ -180,10 +180,10 @@ The user creates this from the scanner output (edit `proposed_replacement` where
          for (int y = 0; y < 4; y++)
            for (int z = 0; z < 4; z++) {
                Holder<Biome> current = biomes.get(x, y, z);
-               String key = current.unwrapKey().map(k -> k.location().toString()).orElse("");
+               String key = current.unwrapKey().map(k -> k.identifier().toString()).orElse("");
                if (mappings.containsKey(key)) {
                    Holder<Biome> replacement = biomeRegistry.getOrThrow(
-                       ResourceKey.create(Registries.BIOME, ResourceLocation.parse(mappings.get(key)))
+                       ResourceKey.create(Registries.BIOME, Identifier.parse(mappings.get(key)))
                    );
                    biomes.set(x, y, z, replacement);
                }

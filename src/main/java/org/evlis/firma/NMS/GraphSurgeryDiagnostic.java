@@ -126,11 +126,11 @@ public final class GraphSurgeryDiagnostic {
         RegistryAccess registries = MinecraftServer.getServer().registryAccess();
         for (ResourceKey<NoiseGeneratorSettings> key : coupledSettings()) {
             RandomState throwaway = RandomState.create(registries, key, 0L);
-            assertCoupledBaseline(throwaway.router(), "settings '" + key.location() + "'", logger);
+            assertCoupledBaseline(throwaway.router(), "settings '" + key.identifier() + "'", logger);
         }
         for (ResourceKey<NoiseGeneratorSettings> key : decoupledSettings()) {
             RandomState throwaway = RandomState.create(registries, key, 0L);
-            assertDecoupledBaseline(throwaway.router(), "settings '" + key.location() + "'", logger);
+            assertDecoupledBaseline(throwaway.router(), "settings '" + key.identifier() + "'", logger);
         }
         // minecraft:end is not validated: end worlds are refused for Ferma packs until
         // the end baseline lands (Phase 4).
@@ -167,7 +167,7 @@ public final class GraphSurgeryDiagnostic {
 
         Map<String, DensityFunction> terrainFields = new LinkedHashMap<>();
         terrainFields.put("depth", wiredRouter.depth());
-        terrainFields.put("initialDensityWithoutJaggedness", wiredRouter.initialDensityWithoutJaggedness());
+        terrainFields.put("preliminarySurfaceLevel", wiredRouter.preliminarySurfaceLevel());
         terrainFields.put("finalDensity", wiredRouter.finalDensity());
 
         Map<String, DensityFunction> climateNoises = new LinkedHashMap<>();
@@ -205,7 +205,7 @@ public final class GraphSurgeryDiagnostic {
 
         Map<String, DensityFunction> terrainFields = new LinkedHashMap<>();
         terrainFields.put("depth", wiredRouter.depth());
-        terrainFields.put("initialDensityWithoutJaggedness", wiredRouter.initialDensityWithoutJaggedness());
+        terrainFields.put("preliminarySurfaceLevel", wiredRouter.preliminarySurfaceLevel());
         terrainFields.put("finalDensity", wiredRouter.finalDensity());
 
         for (Map.Entry<String, DensityFunction> climate : climateFields.entrySet()) {

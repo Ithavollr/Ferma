@@ -103,8 +103,8 @@ class FermaNoiseRouterSurgeryTest {
         assertEquals(0.5, compute(patched.continents()), 0.0);
         // Terrain rewritten: depth = flat_cache(pack fn) + 1 -> 1.5 (was 1.111213).
         assertEquals(1.5, compute(patched.depth()), 1e-9);
-        // Unconfigured params untouched: initial = erosion + ridges inners, unchanged.
-        assertEquals(0.212223 + 0.313233, compute(patched.initialDensityWithoutJaggedness()), 1e-9);
+        // Unconfigured params untouched: preliminary surface = erosion + ridges inners, unchanged.
+        assertEquals(0.212223 + 0.313233, compute(patched.preliminarySurfaceLevel()), 1e-9);
         // finalDensity: only the continents occurrence replaced.
         assertEquals(0.5 + 0.212223 + 0.313233, compute(patched.finalDensity()), 1e-9);
     }
@@ -239,7 +239,7 @@ class FermaNoiseRouterSurgeryTest {
         // Terrain graphs are the identical wired objects — the constant(0.0) inside them
         // (equal to the climate constants) was never a replacement target.
         assertSame(wired.depth(), patched.depth());
-        assertSame(wired.initialDensityWithoutJaggedness(), patched.initialDensityWithoutJaggedness());
+        assertSame(wired.preliminarySurfaceLevel(), patched.preliminarySurfaceLevel());
         assertSame(wired.finalDensity(), patched.finalDensity());
     }
 

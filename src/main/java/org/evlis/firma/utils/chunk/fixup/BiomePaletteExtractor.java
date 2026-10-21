@@ -8,6 +8,7 @@ import net.minecraft.nbt.StringTag;
 
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 public class BiomePaletteExtractor {
@@ -19,16 +20,16 @@ public class BiomePaletteExtractor {
     public Set<String> extractBiomeKeys(CompoundTag chunkTag) {
         Set<String> biomeKeys = new HashSet<>();
 
-        ListTag sections = chunkTag.getList("sections", Tag.TAG_COMPOUND);
+        ListTag sections = chunkTag.getListOrEmpty("sections");
         for (int i = 0; i < sections.size(); i++) {
-            CompoundTag section = sections.getCompound(i);
-            if (!section.contains("biomes", Tag.TAG_COMPOUND)) {
+            Optional<CompoundTag> biomes = sections.getCompound(i).flatMap(s -> s.getCompound("biomes"));
+            if (biomes.isEmpty()) {
                 continue;
             }
 
-            ListTag palette = section.getCompound("biomes").getList("palette", Tag.TAG_STRING);
+            ListTag palette = biomes.get().getListOrEmpty("palette");
             for (int j = 0; j < palette.size(); j++) {
-                biomeKeys.add(palette.getString(j));
+                palette.getString(j).ifPresent(biomeKeys::add);
             }
         }
 
@@ -43,16 +44,16 @@ public class BiomePaletteExtractor {
     public boolean replaceBiomeKeys(CompoundTag chunkTag, Map<String, String> replacements) {
         boolean changed = false;
 
-        ListTag sections = chunkTag.getList("sections", Tag.TAG_COMPOUND);
+        ListTag sections = chunkTag.getListOrEmpty("sections");
         for (int i = 0; i < sections.size(); i++) {
-            CompoundTag section = sections.getCompound(i);
-            if (!section.contains("biomes", Tag.TAG_COMPOUND)) {
+            Optional<CompoundTag> biomes = sections.getCompound(i).flatMap(s -> s.getCompound("biomes"));
+            if (biomes.isEmpty()) {
                 continue;
             }
 
-            ListTag palette = section.getCompound("biomes").getList("palette", Tag.TAG_STRING);
+            ListTag palette = biomes.get().getListOrEmpty("palette");
             for (int j = 0; j < palette.size(); j++) {
-                String replacement = replacements.get(palette.getString(j));
+                String replacement = palette.getString(j).map(replacements::get).orElse(null);
                 if (replacement != null) {
                     palette.set(j, StringTag.valueOf(replacement));
                     changed = true;

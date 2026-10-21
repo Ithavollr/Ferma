@@ -104,7 +104,7 @@ Steps:
     - If `pack.hasClimateConfig(param)` -> `ClimateFunctionFactory.build(...)` produces a custom `DensityFunction` (Constant / DoublePerlin / WeirdnessToRidges / RadialGradient / YGradient / Shattered / etc.).
     - Otherwise -> pass through the **wired vanilla function** unchanged (no wrapper, no `Identity` — avoids per-call `SinglePointContext` allocation).
   - **Terrain-shape fields are surgically rewritten** from the wired graph (see §2.4):
-    `depth`, `initialDensityWithoutJaggedness`, and `finalDensity` are `mapAll` copies of
+    `depth`, `preliminarySurfaceLevel`, and `finalDensity` are `mapAll` copies of
     the wired vanilla graphs with the configured parameters' canonical climate nodes
     replaced by the pack functions. `depth` remains derived (never pack-configurable on
     coupled settings — composite-noise policy).
@@ -142,7 +142,7 @@ Wraps a vanilla `ChunkGenerator`. Each override checks `voidMode`:
 ## 2.4 Terrain-shape patching — graph surgery
 
 Terrain must respond to pack-configured continentalness/erosion/weirdness: the wired
-`depth`, `initialDensityWithoutJaggedness`, and `finalDensity` embed the vanilla climate
+`depth`, `preliminarySurfaceLevel`, and `finalDensity` embed the vanilla climate
 functions deep inside spline coordinates and the cave pipeline.
 
 Ferma patches them by in-place graph surgery (`FermaNoiseRouter.patchClimateFunctions`),
@@ -208,7 +208,7 @@ graphs are an incompatibility):
 | `veinRidged` | Ore vein ridge strength using `Noises.ORE_VEIN_A/B` and Y range | No | Pass-through safe; independent ore-vein path. |
 | `veinGap` | Ore vein gap noise using `Noises.ORE_GAP` | No | Pass-through safe; independent ore-vein path. |
 
-The terrain fields (`depth`, `initialDensityWithoutJaggedness`, `finalDensity`) are the
+The terrain fields (`depth`, `preliminarySurfaceLevel`, `finalDensity`) are the
 surgically rewritten copies of the wired graph when any coupled parameter is configured,
 and the wired originals otherwise. Aquifers read `router.depth()`/`router.erosion()`, so
 they see the same patched values as terrain — consistent by construction.

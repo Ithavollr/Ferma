@@ -94,7 +94,7 @@ public class NMSInjectListener implements Listener {
                     var settingsKey = noiseGenerator.settings.unwrapKey().orElse(null);
                     GraphSurgeryDiagnostic.SettingsClass settingsClass = GraphSurgeryDiagnostic.classify(settingsKey);
                     String context = "world '" + world.getName() + "' (settings "
-                        + (settingsKey == null ? "<keyless>" : settingsKey.location()) + ")";
+                        + (settingsKey == null ? "<keyless>" : settingsKey.identifier()) + ")";
 
                     // Backstop assertion against the world's real wired router. The
                     // primary gate already validated the registry graphs before this
