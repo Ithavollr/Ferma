@@ -13,9 +13,11 @@ import org.evlis.firma.NMS.NMSInjectListener;
 import org.evlis.firma.pack.FermaPack;
 import org.evlis.firma.pack.PackLoader;
 import org.evlis.firma.commands.FixupCommand;
+import org.evlis.firma.preview.PreviewServer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,6 +28,8 @@ public final class Ferma extends JavaPlugin implements Listener {
     private Map<String, FermaPack> packs = Map.of();
     // Pack loader
     private PackLoader packLoader;
+    // Seed-preview tile server; null unless -Dferma.preview is set
+    private @Nullable PreviewServer previewServer;
 
     @Override
     public void onEnable() {
@@ -53,6 +57,16 @@ public final class Ferma extends JavaPlugin implements Listener {
                 .stream().map(biome -> biome.getKey().toString()).toList());
         commandManager.registerCommand(new FixupCommand(this));
         getLogger().info("Ferma commands registered.");
+
+        // Seed-preview tiles for the website. Opt-in so only staging listens: -Dferma.preview=host:port
+        String previewBind = System.getProperty("ferma.preview");
+        if (previewBind != null) {
+            try {
+                previewServer = new PreviewServer(this, previewBind);
+            } catch (IOException | RuntimeException e) {
+                getLogger().severe("Seed preview failed to start on '" + previewBind + "': " + e.getMessage());
+            }
+        }
     }
     
     /**
@@ -93,6 +107,9 @@ public final class Ferma extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         getLogger().info("Ferma shutting down...");
+        if (previewServer != null) {
+            previewServer.stop();
+        }
     }
 
     /**

@@ -121,6 +121,7 @@ val packIds = packsDir.asFile.listFiles { f: File -> f.isDirectory && File(f, "p
 tasks.withType<RunServer>().configureEach {
     dependsOn(syncRunPacks)
     systemProperty("ferma.packWorlds", packIds.joinToString(",") { "$it:${packEnvironments[it] ?: "normal"}" })
+    systemProperty("ferma.preview", "127.0.0.1:8100") // seed-preview tiles, local only
 }
 
 // Test Paper run & immediately shut down, for github actions

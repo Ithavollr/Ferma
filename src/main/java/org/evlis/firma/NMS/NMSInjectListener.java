@@ -1,10 +1,15 @@
 package org.evlis.firma.NMS;
 
+import net.minecraft.core.Holder;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.status.WorldGenContext;
+import net.minecraft.world.level.levelgen.DensityFunction;
+import net.minecraft.world.level.levelgen.DensityFunctions;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.NoiseRouter;
 import net.minecraft.world.level.levelgen.RandomState;
 import org.bukkit.World;
@@ -22,8 +27,11 @@ import org.evlis.firma.pack.VoidChunkHandler;
 import org.evlis.firma.pack.VoidPalette;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 /**
  * Listens for WorldInitEvent and injects our NMSChunkGeneratorDelegate into the world's chunk generation pipeline.
@@ -82,90 +90,11 @@ public class NMSInjectListener implements Listener {
                 // Replacing NoiseBasedChunkGenerator.settings with a Direct holder would
                 // corrupt level.dat on save (our custom DensityFunctions encode as empty {}).
                 try {
-                    // CRITICAL: use the WIRED router from RandomState, not settings.noiseRouter().
-                    // settings.noiseRouter() is the un-wired version with unresolved HolderHolder
-                    // references and un-instantiated noise samplers. Using it would break terrain
-                    // (broken aquifer/fluid noise -> world flooded with water).
-                    RandomState randomState = serverWorld.getChunkSource().randomState();
-                    NoiseRouter wiredRouter = randomState.router();
-
-                    // Select the assertion baseline and surgery mode from the world's
-                    // settings identity (read-only; the settings field is never mutated).
-                    var settingsKey = noiseGenerator.settings.unwrapKey().orElse(null);
-                    GraphSurgeryDiagnostic.SettingsClass settingsClass = GraphSurgeryDiagnostic.classify(settingsKey);
-                    String context = "world '" + world.getName() + "' (settings "
-                        + (settingsKey == null ? "<keyless>" : settingsKey.identifier()) + ")";
-
-                    // Backstop assertion against the world's real wired router. The
-                    // primary gate already validated the registry graphs before this
-                    // world was created; a failure here follows the backstop path in
-                    // the catch below.
-                    switch (settingsClass) {
-                        case COUPLED -> GraphSurgeryDiagnostic.assertCoupledBaseline(
-                            wiredRouter, context, plugin.getLogger());
-                        case DECOUPLED -> GraphSurgeryDiagnostic.assertDecoupledBaseline(
-                            wiredRouter, context, plugin.getLogger());
-                        case END -> throw new IllegalStateException(
-                            "Ferma packs do not support minecraft:end noise settings yet (" + context + ").");
-                        case UNKNOWN -> throw new IllegalStateException(
-                            "Non-vanilla noise settings for " + context + ": Ferma is the noise authority"
-                            + " and cannot patch an externally defined graph.");
-                    }
-
-                    // Patch the climate functions using the pack (graph surgery).
-                    // Terrain is rewritten only on coupled settings; decoupled terrain
-                    // is climate-free and stays untouched.
-                    NoiseRouter patchedRouter = FermaNoiseRouter.patchClimateFunctions(
-                        wiredRouter, serverWorld.getSeed(), pack,
-                        settingsClass == GraphSurgeryDiagnostic.SettingsClass.COUPLED
-                    );
-
-                    // ALSO rebuild Climate.Sampler: it was constructed in RandomState's
-                    // constructor from the *original* router and captured independently.
-                    // MultiNoiseBiomeSource reads from sampler (not router) for biome lookup,
-                    // so without this step our custom climate funcs never reach biome placement.
-                    // Mirror vanilla's visitor that unwraps HolderHolder + Marker indirection.
-                    net.minecraft.world.level.levelgen.DensityFunction.Visitor visitor =
-                        new net.minecraft.world.level.levelgen.DensityFunction.Visitor() {
-                            private final java.util.Map<net.minecraft.world.level.levelgen.DensityFunction,
-                                    net.minecraft.world.level.levelgen.DensityFunction> wrapped = new java.util.HashMap<>();
-
-                            private net.minecraft.world.level.levelgen.DensityFunction wrapNew(
-                                    net.minecraft.world.level.levelgen.DensityFunction df) {
-                                if (df instanceof net.minecraft.world.level.levelgen.DensityFunctions.HolderHolder hh) {
-                                    return hh.function().value();
-                                }
-                                if (df instanceof net.minecraft.world.level.levelgen.DensityFunctions.MarkerOrMarked marker) {
-                                    return marker.wrapped();
-                                }
-                                return df;
-                            }
-
-                            @Override
-                            public net.minecraft.world.level.levelgen.DensityFunction apply(
-                                    net.minecraft.world.level.levelgen.DensityFunction df) {
-                                return wrapped.computeIfAbsent(df, this::wrapNew);
-                            }
-                        };
-                    var settings = noiseGenerator.settings.value();
-                    net.minecraft.world.level.biome.Climate.Sampler patchedSampler =
-                        new net.minecraft.world.level.biome.Climate.Sampler(
-                            patchedRouter.temperature().mapAll(visitor),
-                            patchedRouter.vegetation().mapAll(visitor),
-                            patchedRouter.continents().mapAll(visitor),
-                            patchedRouter.erosion().mapAll(visitor),
-                            patchedRouter.depth().mapAll(visitor),
-                            patchedRouter.ridges().mapAll(visitor),
-                            settings.spawnTarget()
-                        );
-                    // Build and resolve everything before writing either field: a half-patched
-                    // RandomState would mean Ferma terrain with vanilla biomes.
-                    java.lang.reflect.Field routerField = RandomState.class.getDeclaredField("router");
-                    routerField.setAccessible(true);
-                    java.lang.reflect.Field samplerField = RandomState.class.getDeclaredField("sampler");
-                    samplerField.setAccessible(true);
-                    routerField.set(randomState, patchedRouter);
-                    samplerField.set(randomState, patchedSampler);
+                    // Same patch the seed-preview endpoint uses, so previews and real
+                    // worlds cannot drift apart.
+                    patchRandomState(
+                        serverWorld.getChunkSource().randomState(), noiseGenerator.settings,
+                        serverWorld.getSeed(), pack, "world '" + world.getName() + "'", plugin.getLogger());
 
                     plugin.getLogger().info("Patched RandomState.router + sampler using pack: " + pack.id());
                 } catch (Exception e) {
@@ -220,6 +149,90 @@ public class NMSInjectListener implements Listener {
             plugin.getLogger().severe("This world falls back to vanilla generation; resolve the incompatibility before generating terrain you keep.");
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Patch a wired {@link RandomState} in place with a pack's climate: assert the settings
+     * baseline, rewrite the router, rebuild the {@link Climate.Sampler}, then write both
+     * fields. Public so the seed-preview endpoint patches its own private RandomState with
+     * exactly this code. Throws on any incompatibility and leaves the RandomState untouched;
+     * the caller decides what failure means (world init falls back to vanilla, preview errors).
+     *
+     * @param context human-readable owner for messages, e.g. "world 'foo'"
+     */
+    public static void patchRandomState(RandomState randomState, Holder<NoiseGeneratorSettings> settingsHolder,
+                                        long seed, FermaPack pack, String context, Logger logger)
+            throws ReflectiveOperationException {
+        // CRITICAL: use the WIRED router from RandomState, not settings.noiseRouter().
+        // settings.noiseRouter() is the un-wired version with unresolved HolderHolder
+        // references and un-instantiated noise samplers. Using it would break terrain
+        // (broken aquifer/fluid noise -> world flooded with water).
+        NoiseRouter wiredRouter = randomState.router();
+
+        // Select the assertion baseline and surgery mode from the world's settings identity
+        // (read-only; the settings field is never mutated).
+        var settingsKey = settingsHolder.unwrapKey().orElse(null);
+        GraphSurgeryDiagnostic.SettingsClass settingsClass = GraphSurgeryDiagnostic.classify(settingsKey);
+        context = context + " (settings " + (settingsKey == null ? "<keyless>" : settingsKey.identifier()) + ")";
+
+        // Backstop assertion against the real wired router. The primary gate already
+        // validated the registry graphs; a failure here is thrown to the caller.
+        switch (settingsClass) {
+            case COUPLED -> GraphSurgeryDiagnostic.assertCoupledBaseline(wiredRouter, context, logger);
+            case DECOUPLED -> GraphSurgeryDiagnostic.assertDecoupledBaseline(wiredRouter, context, logger);
+            case END -> throw new IllegalStateException(
+                "Ferma packs do not support minecraft:end noise settings yet (" + context + ").");
+            case UNKNOWN -> throw new IllegalStateException(
+                "Non-vanilla noise settings for " + context + ": Ferma is the noise authority"
+                + " and cannot patch an externally defined graph.");
+        }
+
+        // Patch the climate functions using the pack (graph surgery).
+        // Terrain is rewritten only on coupled settings; decoupled terrain
+        // is climate-free and stays untouched.
+        NoiseRouter patchedRouter = FermaNoiseRouter.patchClimateFunctions(
+            wiredRouter, seed, pack, settingsClass == GraphSurgeryDiagnostic.SettingsClass.COUPLED);
+
+        // ALSO rebuild Climate.Sampler: it was constructed in RandomState's
+        // constructor from the *original* router and captured independently.
+        // MultiNoiseBiomeSource reads from sampler (not router) for biome lookup,
+        // so without this step our custom climate funcs never reach biome placement.
+        // Mirror vanilla's visitor that unwraps HolderHolder + Marker indirection.
+        DensityFunction.Visitor visitor = new DensityFunction.Visitor() {
+            private final Map<DensityFunction, DensityFunction> wrapped = new HashMap<>();
+
+            private DensityFunction wrapNew(DensityFunction df) {
+                if (df instanceof DensityFunctions.HolderHolder hh) {
+                    return hh.function().value();
+                }
+                if (df instanceof DensityFunctions.MarkerOrMarked marker) {
+                    return marker.wrapped();
+                }
+                return df;
+            }
+
+            @Override
+            public DensityFunction apply(DensityFunction df) {
+                return wrapped.computeIfAbsent(df, this::wrapNew);
+            }
+        };
+        Climate.Sampler patchedSampler = new Climate.Sampler(
+            patchedRouter.temperature().mapAll(visitor),
+            patchedRouter.vegetation().mapAll(visitor),
+            patchedRouter.continents().mapAll(visitor),
+            patchedRouter.erosion().mapAll(visitor),
+            patchedRouter.depth().mapAll(visitor),
+            patchedRouter.ridges().mapAll(visitor),
+            settingsHolder.value().spawnTarget()
+        );
+        // Build and resolve everything before writing either field: a half-patched
+        // RandomState would mean Ferma terrain with vanilla biomes.
+        Field routerField = RandomState.class.getDeclaredField("router");
+        routerField.setAccessible(true);
+        Field samplerField = RandomState.class.getDeclaredField("sampler");
+        samplerField.setAccessible(true);
+        routerField.set(randomState, patchedRouter);
+        samplerField.set(randomState, patchedSampler);
     }
 
     /**
