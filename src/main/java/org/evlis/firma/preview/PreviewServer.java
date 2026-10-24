@@ -1,5 +1,6 @@
 package org.evlis.firma.preview;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -19,7 +20,10 @@ import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseSettings;
 import net.minecraft.world.level.levelgen.RandomState;
+import org.bukkit.Bukkit;
+import org.bukkit.World;
 import org.evlis.firma.Ferma;
+import org.evlis.firma.FermaChunkGenerator;
 import org.evlis.firma.NMS.GraphSurgeryDiagnostic;
 import org.evlis.firma.NMS.NMSInjectListener;
 import org.evlis.firma.pack.FermaPack;
@@ -38,6 +42,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
 /**
@@ -86,6 +91,7 @@ public final class PreviewServer {
         int colon = bind.lastIndexOf(':');
         http = HttpServer.create(new InetSocketAddress(bind.substring(0, colon), Integer.parseInt(bind.substring(colon + 1))), 0);
         http.createContext("/", this::handle);
+        http.createContext("/worlds", this::worlds);
         http.setExecutor(pool);
         http.start();
         plugin.getLogger().info("Seed preview listening on " + bind);
@@ -146,6 +152,50 @@ public final class PreviewServer {
             ex.sendResponseHeaders(200, png.length);
             try (OutputStream out = ex.getResponseBody()) {
                 out.write(png);
+            }
+        } finally {
+            ex.close();
+        }
+    }
+
+    /**
+     * {@code GET /worlds}: every loaded overworld this server generates with a Ferma noise pack, as
+     * {@code [{"name","pack","seed"}]}. Seeds are strings: JSON readers lose precision past 2^53.
+     */
+    private void worlds(HttpExchange ex) throws IOException {
+        try {
+            if (!"GET".equals(ex.getRequestMethod()) || !"/worlds".equals(ex.getRequestURI().getPath())) {
+                send(ex, 400, "usage: GET /worlds");
+                return;
+            }
+            JsonArray list;
+            try {
+                // Bukkit's world list is main-thread state; read it there, not on an HTTP thread.
+                list = Bukkit.getScheduler().callSyncMethod(plugin, () -> {
+                    JsonArray out = new JsonArray();
+                    for (World world : Bukkit.getWorlds()) {
+                        if (world.getEnvironment() == World.Environment.NORMAL
+                                && world.getGenerator() instanceof FermaChunkGenerator gen
+                                && gen.getMode() == FermaChunkGenerator.GenerationMode.NOISE) {
+                            JsonObject entry = new JsonObject();
+                            entry.addProperty("name", world.getName());
+                            entry.addProperty("pack", gen.getPackId());
+                            entry.addProperty("seed", Long.toString(world.getSeed()));
+                            out.add(entry);
+                        }
+                    }
+                    return out;
+                }).get(10, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                plugin.getLogger().log(Level.SEVERE, "Seed preview world list failed", e);
+                send(ex, 500, "world list failed: " + e.getMessage());
+                return;
+            }
+            byte[] body = list.toString().getBytes(StandardCharsets.UTF_8);
+            ex.getResponseHeaders().set("Content-Type", "application/json");
+            ex.sendResponseHeaders(200, body.length);
+            try (OutputStream out = ex.getResponseBody()) {
+                out.write(body);
             }
         } finally {
             ex.close();
