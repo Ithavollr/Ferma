@@ -15,18 +15,23 @@ import net.minecraft.server.dedicated.DedicatedServerProperties;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.NoiseSettings;
 import net.minecraft.world.level.levelgen.RandomState;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
+import org.bukkit.craftbukkit.CraftWorld;
+import org.bukkit.craftbukkit.generator.CustomChunkGenerator;
 import org.evlis.firma.Ferma;
 import org.evlis.firma.FermaChunkGenerator;
 import org.evlis.firma.NMS.GraphSurgeryDiagnostic;
 import org.evlis.firma.NMS.NMSInjectListener;
 import org.evlis.firma.pack.FermaPack;
+import org.jetbrains.annotations.Nullable;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -62,8 +67,11 @@ public final class PreviewServer {
     private static final int STEP = 8;             // stepped-shading band height, blocks
     private static final int CONTOUR = 32;         // contour interval, blocks
     private static final int CONTOUR_MAX_BPP = 16; // further out, contours turn into noise
-    // Overworld types a book may use. Only one today; skylands etc. add an entry here.
-    private static final Map<String, ResourceKey<LevelStem>> TYPES = Map.of("overworld", LevelStem.OVERWORLD);
+    // Overworld types a book may use, by URL name: the dimension stem tiles are built from, and the noise settings
+    // that identify a world of that type in /worlds. Only one today; skylands, caves etc. add an entry here.
+    private record WorldType(ResourceKey<LevelStem> stem, ResourceKey<NoiseGeneratorSettings> settings) {}
+    private static final Map<String, WorldType> TYPES = Map.of(
+        "normal", new WorldType(LevelStem.OVERWORLD, NoiseGeneratorSettings.OVERWORLD));
 
     private record Preview(RandomState randomState, BiomeSource biomes, int minY, int maxY) {}
 
@@ -109,7 +117,7 @@ public final class PreviewServer {
                 send(ex, 400, "usage: GET /<type>/<pack>/<seed>/<z>/<x>/<y>.png");
                 return;
             }
-            ResourceKey<LevelStem> type = TYPES.get(p[1]);
+            WorldType type = TYPES.get(p[1]);
             if (type == null) {
                 send(ex, 404, "unknown type '" + p[1] + "', valid: " + TYPES.keySet());
                 return;
@@ -160,7 +168,9 @@ public final class PreviewServer {
 
     /**
      * {@code GET /worlds}: every loaded overworld this server generates with a Ferma noise pack, as
-     * {@code [{"name","pack","seed"}]}. Seeds are strings: JSON readers lose precision past 2^53.
+     * {@code [{"name","type","pack","seed"}]}. The type comes from the world's own noise settings; worlds whose
+     * settings match no type are left out, since they cannot be previewed. Seeds are strings: JSON readers lose
+     * precision past 2^53.
      */
     private void worlds(HttpExchange ex) throws IOException {
         try {
@@ -177,8 +187,13 @@ public final class PreviewServer {
                         if (world.getEnvironment() == World.Environment.NORMAL
                                 && world.getGenerator() instanceof FermaChunkGenerator gen
                                 && gen.getMode() == FermaChunkGenerator.GenerationMode.NOISE) {
+                            String type = typeOf(world);
+                            if (type == null) {
+                                continue;
+                            }
                             JsonObject entry = new JsonObject();
                             entry.addProperty("name", world.getName());
+                            entry.addProperty("type", type);
                             entry.addProperty("pack", gen.getPackId());
                             entry.addProperty("seed", Long.toString(world.getSeed()));
                             out.add(entry);
@@ -202,6 +217,23 @@ public final class PreviewServer {
         }
     }
 
+    /** The TYPES name whose settings this world generates with, or null. Same unwrap as ChunkMap's RandomState. */
+    private static @Nullable String typeOf(World world) {
+        ChunkGenerator generator = ((CraftWorld) world).getHandle().getChunkSource().getGenerator();
+        if (generator instanceof CustomChunkGenerator custom) {
+            generator = custom.getDelegate();
+        }
+        if (!(generator instanceof NoiseBasedChunkGenerator noise)) {
+            return null;
+        }
+        for (Map.Entry<String, WorldType> type : TYPES.entrySet()) {
+            if (noise.generatorSettings().is(type.getValue().settings())) {
+                return type.getKey();
+            }
+        }
+        return null;
+    }
+
     private static void send(HttpExchange ex, int code, String message) throws IOException {
         byte[] body = (message + "\n").getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
@@ -211,7 +243,7 @@ public final class PreviewServer {
         }
     }
 
-    private Preview preview(String key, ResourceKey<LevelStem> type, FermaPack pack, long seed) throws ReflectiveOperationException {
+    private Preview preview(String key, WorldType type, FermaPack pack, long seed) throws ReflectiveOperationException {
         synchronized (previews) {
             Preview cached = previews.get(key);
             if (cached != null) {
@@ -225,10 +257,16 @@ public final class PreviewServer {
             LevelStem stem = new DedicatedServerProperties.WorldDimensionData(new JsonObject(), "normal")
                 .create(context.datapackWorldgen())
                 .bake(context.datapackDimensions().lookupOrThrow(Registries.LEVEL_STEM))
-                .dimensionsRegistryAccess().lookupOrThrow(Registries.LEVEL_STEM).getValueOrThrow(type);
+                .dimensionsRegistryAccess().lookupOrThrow(Registries.LEVEL_STEM).getValueOrThrow(type.stem());
             if (!(stem.generator() instanceof NoiseBasedChunkGenerator generator)) {
-                throw new IllegalStateException("type " + type.identifier() + " is not noise-based: "
+                throw new IllegalStateException("stem " + type.stem().identifier() + " is not noise-based: "
                     + stem.generator().getClass().getName());
+            }
+            // The stem must carry the type's own settings, or tiles would show another type's terrain.
+            if (!generator.generatorSettings().is(type.settings())) {
+                throw new IllegalStateException("stem " + type.stem().identifier() + " uses "
+                    + generator.generatorSettings().unwrapKey().map(k -> k.identifier().toString()).orElse("<keyless>")
+                    + " settings, not " + type.settings().identifier());
             }
             GraphSurgeryDiagnostic.validateVanillaStructure(plugin.getLogger()); // primary gate, as at world creation
             RandomState randomState = RandomState.create(
